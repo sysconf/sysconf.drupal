@@ -2,7 +2,7 @@
 ======================================================================
 
 Sysconf is a tool that help sysadmins package and share system configurations
-around simple "sysconf profiles" that depend on each other.
+around simple "sysconf profiles" that depend on each other. Here is one of them.
 
 This "nef.common" profile contains:
 * shell utils to be sourced: usr/share/bash-nef/util
