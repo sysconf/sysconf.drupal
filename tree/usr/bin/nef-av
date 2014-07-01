@@ -15,8 +15,9 @@
 #   - automatic advise about machine-guessable file size reencoding
 #     optimizations [TODO]
 #
-# 20140630 advises from Florent Thiery <florent.thiery@ubicast.eu>
-# 20140701 first version by JF Gigand <jf@geonef.fr>
+# HISTORY
+#   20140630 advises from Florent Thiery <florent.thiery@ubicast.eu>
+#   20140701 first version by JF Gigand <jf@geonef.fr>
 #
 
 ######################################################################
@@ -41,19 +42,23 @@ show_usage()
     cat <<EOF
 usage: $0 encode [options] <profile> [options] <file1> [file2 [... fileN] ]
 
-        Encode given files using avconv(), using defs from <profile>.
+    Encode given files using avconv(), using defs from <profile>.
 
-        Each output file name is obtained by stripping the extension off
-        the source file and adding the output extension as defined by
-        the profile.
+    Each output file name is obtained by stripping off the extension the source
+    file and adding the output extension as defined by the profile.
 
-        No file will ever be overwritten without asking, unless the -f option
-        is given.
+    No file will ever be overwritten without asking, unless the -f option is
+    given.
 
-        Options can be given anywhere, it does not matter.
+    Options can be given anywhere between arguments, it does not matter.
 
     <profile>
         Name of profile to use, or "?" for a list.
+
+        A profile 'myprofile' is defined using /etc/nef-av/profile.myprofile.conf
+        which contains bash(1) declarations.
+
+        An example is provided, check out: etc/nef-av/profile.florent.conf.
 
     -m, --missing
         Ignore medias already processed
