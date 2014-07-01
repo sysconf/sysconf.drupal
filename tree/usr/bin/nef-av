@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# nef-av - utility to help manage/reencode audio/video media
+# nef-av - utility to help manage/reencode audio/video media using avconv(1)
 #
 # PURPOSES OF THE SCRIPT
 #
@@ -41,7 +41,7 @@ show_usage()
     cat <<EOF
 usage: $0 encode [options] <profile> [options] <file1> [file2 [... fileN] ]
 
-        Encode every given file using the given profile.
+        Encode given files using avconv(), using defs from <profile>.
 
         Each output file name is obtained by stripping the extension off
         the source file and adding the output extension as defined by
