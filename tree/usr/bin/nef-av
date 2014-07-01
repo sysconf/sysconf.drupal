@@ -4,6 +4,8 @@
 #
 # PURPOSES OF THE SCRIPT
 #
+#   - batch encoding, like: nef-av myprofile *.avi
+#
 #   - investigation: formats, codecs, filesizes, lengths, image size on
 #       single and multiple file [TODO]
 #
