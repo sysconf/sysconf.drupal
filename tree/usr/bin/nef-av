@@ -70,6 +70,12 @@ usage: $0 encode [options] <profile> [options] <file1> [file2 [... fileN] ]
         Use the given avconv(1) options for encoding.
         These are append at and of commandline, before the ouput file arg.
 
+    --no-defaults
+        Do not source /etc/defaults/nef-av.
+
+    -s, --simulate
+        Do not run avconv nor modify anything. Just show what would be done.
+
     -v, --verbose
         Enable verbose
 
@@ -248,11 +254,11 @@ while [ "$1" != "" ]; do
             nef_av_opt_nodefaults=yes
             shift
             ;;
-        --simulate)
+        -s)
             nef_av_opt_simulate=yes
             shift
             ;;
-        -s)
+        --simulate)
             nef_av_opt_simulate=yes
             shift
             ;;
