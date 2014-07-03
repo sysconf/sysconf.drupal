@@ -1,0 +1,100 @@
+#!/bin/bash
+#
+# git-transform - manages special Git branches for automatic content transformations
+#
+# HISTORY
+#   20140702 first version by JF Gigand <jf@geonef.fr>
+
+
+######################################################################
+# LIBS
+. /usr/lib/sysconf.base/common.sh
+
+
+######################################################################
+# "hard-coded" DEFINITIONS
+
+git=git
+_git_tr_branch=git-transform
+
+show_usage()
+{
+    cat <<EOF
+usage: $0 sync
+EOF
+
+}
+
+_git_tr_init()
+{
+    _tr_commit=$( $git show-ref --hash refs/heads/$_git_tr_branch )
+    if test "x$_tr_commit" = "x"; then
+        nef_log "Branch '$_git_tr_branch' does not exist. Creating..."
+        tree=$( echo -n "" | $git mktree )
+        nef_log "tree = $tree"
+        commit=$( echo "empty tree" | $git commit-tree $tree )
+        nef_log "commit = $commit"
+        $git update-ref refs/heads/$_git_tr_branch $commit
+    fi
+    # [ -f $_repos_dir/refs/heads/git-transform
+    #     git update-ref
+    # git branch --list --no-abbrev -v | cat
+}
+
+_git_tr_sync()
+{
+if test -f docker-sync.list; then
+    nef_array_from_lines syncs "$( cat docker-sync.list  )"
+
+    #     old_ifs="$IFS"
+    #     IFS="
+    # "
+    #     syncs=( `cat docker-sync.list` )
+    #     IFS="$old_ifs"
+
+    for sync in "${syncs[@]}"; do
+        image=$(echo "$sync" | cut -f1)
+        # image=$(echo "$sync" | cut -f1)
+
+        echo Running image: $image
+        echo sudo docker.io run $image git-transform $image
+        opts="--rm=true"
+        sudo docker.io run $_opts $image ls -l /
+    done
+
+fi
+
+}
+
+######################################################################
+# COMMAND LINE PARSING
+
+while [ "$1" != "" ]; do
+
+    case "$1" in
+        init)
+            _git_tr_init
+            shift
+            ;;
+        sync)
+            _git_tr_sync
+            shift
+            ;;
+        -h)
+	    show_usage
+            exit 0
+	    ;;
+        --help)
+	    show_usage
+            exit 0
+	    ;;
+        -*)
+            echo "bad option: '$1'"
+            nef_usage_error
+	    ;;
+        *)
+            nef_usage_error
+            ;;
+    esac
+
+done
