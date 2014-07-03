@@ -16,6 +16,8 @@
 
 git=git
 _git_tr_branch=git-transform
+source_work_dir=$PWD
+source_git_dir=$PWD/.git
 
 show_usage()
 {
@@ -66,6 +68,35 @@ fi
 
 }
 
+_git_tr_in_container()
+{
+    dest_work_dir=$source_git_dir/transform/work
+
+    [ -d /repository ] || nef_fatal "/repository does not exist as a directory"
+    cd /repository
+    git status >/dev/null || nef_fatal "/repository is not a Git working tree"
+
+    if test -d $dest_work_dir; then
+        rm -rf $dest_work_dir || nef_fatal "could not remove $dest_work_dir"
+    fi
+
+    # Clone or init (if out branch non-existant)
+    branch=toto
+    hasbranch=yes
+    if test -f .git/refs/heads/$branch; then
+        git clone . -b $branch .git/transform/work || nef_fatal "could not create work tree of branch $branch"
+        cd .git/transform/work
+    else
+        git init .git/transform/work || nef_fatal "could not init git repos in .git/transform/work"
+        cd .git/transform/work
+        git co -b $branch
+    fi
+    # git status
+    git remote -v
+    # mkdir -p .git/transform/work || nef_fatal "cannot mkdir .git/transform/work"
+}
+
+
 ######################################################################
 # COMMAND LINE PARSING
 
@@ -74,11 +105,15 @@ while [ "$1" != "" ]; do
     case "$1" in
         init)
             _git_tr_init
-            shift
+            exit
             ;;
         sync)
-            _git_tr_sync
-            shift
+            _git_tr_sync "$@"
+            exit
+            ;;
+        in-container)
+            _git_tr_in_container
+            exit
             ;;
         -h)
 	    show_usage
@@ -89,11 +124,10 @@ while [ "$1" != "" ]; do
             exit 0
 	    ;;
         -*)
-            echo "bad option: '$1'"
-            nef_usage_error
+            nef_usage_error "bad option: $1"
 	    ;;
         *)
-            nef_usage_error
+            nef_usage_error "unknown command: $1"
             ;;
     esac
 
