@@ -1,0 +1,82 @@
+#!/bin/bash
+#
+# nef-transform - manages transform of git content
+#
+# HISTORY
+#   20140703 first version by JF Gigand <jf@geonef.fr>
+
+
+######################################################################
+# LIBS
+. /usr/lib/sysconf.base/common.sh
+
+
+######################################################################
+# "hard-coded" DEFINITIONS
+
+
+show_usage()
+{
+    cat <<EOF
+usage: $0 ...
+EOF
+
+}
+
+
+nef_tr_mytest()
+{
+    echo coucou
+}
+
+nef_tr_filter1()
+{
+    echo
+    nef_log "======================================================================"
+    env | grep -i git
+    nef_log "======================================================================"
+    pwd
+    nef_log "======================================================================"
+    ls -l
+    nef_log "======================================================================"
+    git diff --cached
+    nef_log "======================================================================"
+    # export GIT_COMMITTER_NAME=${GIT_COMMITTER_NAME}-bis
+}
+
+
+######################################################################
+# COMMAND LINE PARSING
+
+while [ "$1" != "" ]; do
+
+    case "$1" in
+        __status)
+            # _nef_tr_init
+            exit
+            ;;
+        mytest)
+            nef_tr_mytest "$@"
+            exit
+            ;;
+        filter1)
+            nef_tr_filter1 "$@"
+            exit
+            ;;
+        -h)
+	    show_usage
+            exit 0
+	    ;;
+        --help)
+	    show_usage
+            exit 0
+	    ;;
+        -*)
+            nef_usage_error "bad option: $1"
+	    ;;
+        *)
+            nef_usage_error "unknown command: $1"
+            ;;
+    esac
+
+done
