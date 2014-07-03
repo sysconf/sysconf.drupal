@@ -18,6 +18,7 @@ git=git
 _git_tr_branch=git-transform
 source_work_dir=$PWD
 source_git_dir=$PWD/.git
+docker_extra_opts="-v /vie/okacte/xp/git-docker/share:/sysconf" # to clear
 
 show_usage()
 {
@@ -45,26 +46,26 @@ _git_tr_init()
 
 _git_tr_sync()
 {
-if test -f docker-sync.list; then
-    nef_array_from_lines syncs "$( cat docker-sync.list  )"
+    image="$1"
+    [ "x$image" = "x" ] && nef_usage_error
 
-    #     old_ifs="$IFS"
-    #     IFS="
-    # "
-    #     syncs=( `cat docker-sync.list` )
-    #     IFS="$old_ifs"
+    echo Running image: $image
+    echo sudo docker.io run $image git-transform $image
+    _opts="--rm=true $docker_extra_opts"
+    sudo docker.io run $_opts $image git-transform in-container
 
-    for sync in "${syncs[@]}"; do
-        image=$(echo "$sync" | cut -f1)
-        # image=$(echo "$sync" | cut -f1)
+    # if test -f docker-sync.list; then
+    #     nef_array_from_lines syncs "$( cat docker-sync.list  )"
+    #     for sync in "${syncs[@]}"; do
+    #         image=$(echo "$sync" | cut -f1)
+    #         # image=$(echo "$sync" | cut -f1)
 
-        echo Running image: $image
-        echo sudo docker.io run $image git-transform $image
-        opts="--rm=true"
-        sudo docker.io run $_opts $image ls -l /
-    done
-
-fi
+    #         echo Running image: $image
+    #         echo sudo docker.io run $image git-transform $image
+    #         opts="--rm=true"
+    #         sudo docker.io run $_opts $image ls -l /
+    #     done
+    # fi
 
 }
 
@@ -100,6 +101,8 @@ _git_tr_in_container()
 ######################################################################
 # COMMAND LINE PARSING
 
+git_tr_command_argv=()
+
 while [ "$1" != "" ]; do
 
     case "$1" in
@@ -108,10 +111,12 @@ while [ "$1" != "" ]; do
             exit
             ;;
         sync)
+            shift
             _git_tr_sync "$@"
             exit
             ;;
         in-container)
+            shift
             _git_tr_in_container
             exit
             ;;
@@ -127,8 +132,20 @@ while [ "$1" != "" ]; do
             nef_usage_error "bad option: $1"
 	    ;;
         *)
-            nef_usage_error "unknown command: $1"
+            git_tr_command_argv=(${git_tr_command_argv[@]} "$1")
+            shift
             ;;
     esac
 
 done
+
+[ "x${git_tr_command_argv[0]}" = "x" ] && nef_fatal ""
+
+
+######################################################################
+# RUN
+
+git_tr_command_function_name="git_tr_command_${git_tr_command_argv[0]}"
+$git_tr_command_function_name "${git_tr_command_argv[@]}" \
+    || nef_fatal "command ${git_tr_command_argv[0]} returned status $?"
+nef_log "Command returned successfully."
