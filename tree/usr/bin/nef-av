@@ -331,5 +331,6 @@ fi
 # RUNTIME
 
 nef_av_command_function_name="nef_av_command_${nef_av_command_argv[0]}"
-$nef_av_command_function_name "${nef_av_command_argv[@]}" || nef_fatal "command ${nef_av_command_argv[0]} returned status $?"
+$nef_av_command_function_name "${nef_av_command_argv[@]}" \
+    || nef_fatal "command ${nef_av_command_argv[0]} returned status $?"
 nef_log "Command returned successfully."
