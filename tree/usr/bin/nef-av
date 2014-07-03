@@ -20,6 +20,7 @@
 #   20140701 first version by JF Gigand <jf@geonef.fr>
 #
 
+
 ######################################################################
 # LIBS
 . /usr/lib/sysconf.base/common.sh
@@ -249,8 +250,14 @@ while [ "$1" != "" ]; do
             nef_av_opt_video_only=yes
             shift
             ;;
+        -e)
+            [ "x$2" = "x" ] && nef_usage_error "$1 requies an argument"
+            nef_av_opt_extra_array=("${nef_av_opt_extra_array[@]}" $2)
+            shift
+            shift
+            ;;
         --extra)
-            [ "x$2" = "x" ] && nef_fatal "$1 requies an argument"
+            [ "x$2" = "x" ] && nef_usage_error "$1 requies an argument"
             nef_av_opt_extra_array=("${nef_av_opt_extra_array[@]}" $2)
             shift
             shift
@@ -284,9 +291,7 @@ while [ "$1" != "" ]; do
             exit 0
 	    ;;
         -*)
-            echo "bad option: '$1'"
-	    show_usage
-            exit 0
+            nef_usage_error "bad option: '$1'"
 	    ;;
         *)
             nef_av_command_argv=(${nef_av_command_argv[@]} "$1")
