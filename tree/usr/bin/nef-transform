@@ -19,6 +19,16 @@ show_usage()
     cat <<EOF
 usage: $0 [options] sync [options]
 
+    --dev
+        Enable development mode (implies --verbose)
+
+        The Docker container won't be removed after execution (no docker --rm=true run ...).
+        Also, if a previous container is found (matching image and command),
+        it would be restarted instead of creating a new one.
+
+        This way, machine state is preserved, allowing work on the container
+        for a later "docker commit".
+
     -v, --verbose
         Enable verbose
 
@@ -71,12 +81,80 @@ nef_tr_command_status()
 
 nef_tr_command_sync_one_transform()
 {
-    NEF_TR_ENGINE_REPOSITORY=/repository.git
     NEF_TR_BRANCH_SYNC=$1
+    NEF_TR_BRANCHES_LIST=($(echo $NEF_TR_BRANCH_SYNC | sed -E 's/[^ ]++?=//' | tr + " " | tr , " "))
+
+    nef_log "Processing transform '$NEF_TR_BRANCH_SYNC'"
+
+    NEF_TR_LAST_MERGE_COMMIT=$(git log -n 1 --min-parents=3 --pretty=format:%H $NEF_TR_BRANCH_SYNC)
+
+    if [ "x$NEF_TR_LAST_MERGE_COMMIT" = x ]; then
+        echo "No previous merge found in branch '$NEF_TR_BRANCH_SYNC'. Will perform full merge..."
+        echo "We have to perform a full merge..."
+        # echo "Going to merge branch '${branches[1]}' into branch '${branches[0]}'..."
+    else
+        echo "Last merge was $NEF_TR_LAST_MERGE_COMMIT (exiting)"
+        git show $NEF_TR_LAST_MERGE_COMMIT
+
+        for _branch in $NEF_TR_BRANCHES_LIST; do
+            _var=NEF_TR_ENGINE_COMMIT_BRA
+        done
+
+        exit
+    fi
+
+    _refs=""
+
+    for branch_number in "${!NEF_TR_BRANCHES_LIST[@]}"; do
+        branch_name=${NEF_TR_BRANCHES_LIST[$branch_number]}
+        _logmsg=
+
+        if [ -f $nef_git_dir/refs/heads/$branch_name ]; then
+            _branch_refs=$branch_name
+            if [ "x$NEF_TR_LAST_MERGE_COMMIT" = x ]; then
+                _logmsg="(from origin of history)"
+            else
+                echo "TODO!"; exit
+                _branch_merged_commit
+                _branch_refs="${_branch_merged_commit}..${branch_name}"
+            fi
+            _refs="$_refs $_branch_refs"
+        else
+            _logmsg="(branch does not exist yet)"
+            _branch_refs="-"
+        fi
+        nef_log "branch $branch_number = $branch_name ; refs = $_branch_refs $_logmsg"
+    done
+
+    if [ "x$_refs" = x ]; then
+        nef_log "No commit range to inspect (do these branches exist?: ${NEF_TR_BRANCHES_LIST[@]})"
+        return
+    fi
+
+    # nef_log "Going to check: $_refs"
+
+    _all_commits=$(git log --pretty=format:%H $_refs)
+    # git log $_refs
+    _count=$(echo $_all_commits | wc -w)
+    if [ $_count -eq 0 ]; then
+        nef_log "No commit to merge!"
+        return
+    fi
+    nef_log "Going to merge $_count commit(s) [$_refs]"
+        # nef_tr_command_sync_run_engine $NEF_TR_BRANCH_SYNC
+
+    for commit in $_all_commits; do
+        nef_log "Processing commit $commit"
+    done
+}
+
+# Params are given through NEF_TR_* vars
+nef_tr_command_sync_run_engine()
+{
+    NEF_TR_ENGINE_REPOSITORY=/repository.git
     NEF_TR_WORK_REL_DIR=nef-tr/$NEF_TR_BRANCH_SYNC
     NEF_TR_WORK_DIR=$nef_git_dir/$NEF_TR_WORK_REL_DIR
     NEF_TR_BRANCH_ENGINE=$(echo $NEF_TR_BRANCH_SYNC | sed 's/+=.*//')
-    NEF_TR_BRANCHES_LIST=$(echo $NEF_TR_BRANCH_SYNC | sed 's/.*+=//' | tr + " ")
 
     # All "NEF_TR_*" variables are exported to the Docker container
     NEF_TR_ENGINE_BRANCH_SYNC=$NEF_TR_BRANCH_SYNC
@@ -84,7 +162,7 @@ nef_tr_command_sync_one_transform()
     NEF_TR_ENGINE_BRANCH_ENGINE=$NEF_TR_BRANCH_ENGINE
     NEF_TR_ENGINE_BRANCHES_LIST=$(echo $NEF_TR_BRANCHES_LIST | tr " " ",")
 
-    nef_log "Processing engine=$NEF_TR_BRANCH_ENGINE sync=$NEF_TR_BRANCH_SYNC"
+    nef_log "Running engine '$NEF_TR_BRANCH_ENGINE' for sync '$NEF_TR_BRANCH_SYNC'"
     # ( set -o posix ; set ) | grep -i nef_tr_; exit
 
     # $NEF_TR_WORK_DIR is where the container can work and leave state for futures syncs
@@ -113,7 +191,7 @@ nef_tr_command_sync_one_transform()
     # NEF_TRANSFORM_BRANCH_SYNC=$branch
     # NEF_TRANSFORM_BRANCHES_LIST=$_term_branches
 
-    docker_v_opts="-v $nef_git_dir:/$NEF_TR_ENGINE_REPOSITORY"
+    docker_v_opts="-v $nef_git_dir:$NEF_TR_ENGINE_REPOSITORY"
     # docker_v_opts="-v $NEF_TR_WORK_DIR:$NEF_TR_ENGINE_WORK_DIR"
     docker_env_opts=
     for var in $(compgen -v | grep ^NEF_TR_ENGINE_ ); do
@@ -134,12 +212,36 @@ nef_tr_command_sync_one_transform()
     case "$dockertype" in
         image)
             dockercommand=$(echo $engine | cut -d: -f4)
-            [ "x$dockercommand" = x ] && dockercommand=$NEF_TR_ENGINE_WORK_DIR/$NEF_TR_ENGINE_BRANCH_ENGINE/execute
-            _opts="--rm=true"
+            [ "x$dockercommand" = x ] && dockercommand="$NEF_TR_ENGINE_WORK_DIR/$NEF_TR_ENGINE_BRANCH_ENGINE/execute $NEF_TR_BRANCHES_LIST"
 
-            cmd="sudo docker.io run $_opts $docker_v_opts $docker_env_opts $dockername $dockercommand"
-            nef_tr_verbose "Running: $cmd"
-            $cmd
+            _full_docker_cmd=
+            _docker_opt_rm="--rm=true"
+
+            if [ "$nef_tr_opt_dev" = yes ]; then
+                find_command="sudo docker.io ps"
+                running_cont_ids=$(sudo docker.io ps -q --no-trunc)
+                compatible_cont_ids=$(sudo docker.io ps -a --no-trunc  | grep "   ${dockername}:" | grep "   ${dockercommand}" | sed 's/ .*//')
+                stopped_compatible_cont_ids=$(echo "$compatible_cont_ids" | grep -v -E `echo running_cont_ids | tr " " "|"`)
+                first_compatible_cont_id=$(echo "$stopped_compatible_cont_ids" | head -n 1)
+
+                if [ "x$first_compatible_cont_id" = x ]; then
+                    nef_tr_verbose "no stopped container found for image '$dockername' and command, defaults to usual container creation, but without $_docker_opt_rm"
+                else
+                    nef_tr_verbose "found container matching image '$dockername' and command '$dockercommand'"
+                    nef_tr_verbose "restarting stopped container: $first_compatible_cont_id"
+                    _full_docker_cmd="sudo docker.io start -a -i $first_compatible_cont_id"
+                fi
+            else
+                _docker_opts="$_docker_opt_rm"
+            fi
+
+            if [ "x$_full_docker_cmd" = x ]; then
+                _full_docker_cmd="sudo docker.io run -t -i $_docker_opts $docker_v_opts $docker_env_opts $dockername $dockercommand"
+            fi
+            nef_tr_verbose "Running: $_full_docker_cmd"
+            nef_tr_verbose "== DOCKER OUTPUT BEGIN ==========================="
+            $_full_docker_cmd
+            nef_tr_verbose "== DOCKER OUTPUT END ============================="
             ;;
         container)
             ;;
@@ -193,10 +295,12 @@ nef_tr_filter1()
 nef_tr_command_argv=()
 nef_tr_opt_verbose=no
 nef_tr_opt_debug=no
+nef_tr_opt_dev=no
 
 while [ "$1" != "" ]; do
 
     case "$1" in
+        --dev) nef_tr_opt_dev=yes; nef_tr_opt_verbose=yes; shift ;;
         -v | --verbose) nef_tr_opt_verbose=yes; shift ;;
         --debug) nef_tr_opt_debug=yes; nef_tr_opt_verbose=yes; shift ;;
         -h | --help) show_usage; exit 0 ;;
