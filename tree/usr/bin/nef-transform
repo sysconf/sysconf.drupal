@@ -18,15 +18,118 @@
 show_usage()
 {
     cat <<EOF
-usage: $0 ...
+usage: $0 [options] sync [options]
+
+    -v, --verbose
+        Enable verbose
+
+    -h, --help
+        Show usage help
 EOF
 
 }
-
-
-nef_tr_mytest()
+nef_tr_verbose()
 {
-    echo coucou
+    if test "$nef_tr_opt_verbose" = yes; then
+        nef_log "[VERBOSE]" "$@"
+        return 0
+    fi
+    return 1
+}
+
+_nef_tr_chdir_tr_work()
+{
+    nef_git_dir=$(git rev-parse --git-dir) || nef_fatal "not in a git repository"
+    cd $nef_git_dir
+    mkdir -p nef-transform || nef_fatal "could not create $PWD/nef-transform"
+    cd nef-transform
+    pwd
+}
+
+_git_clone_or_pull()
+{
+    if [ -d "$2" ]; then
+        cd "$2"
+        echo git pull "$1" $3
+        redir=
+        [ x$nef_tr_opt_verbose = yes ] || $redir=">/dev/null"
+
+        git pull "$1" $3 || nef_fatal "could not update repository: $PWD" $redir
+        cd -
+    else
+        git clone "$1" "$2" -b $3 $redir
+    fi
+}
+
+nef_tr_command_sync()
+{
+    _work_dir=$(_nef_tr_chdir_tr_work)
+    cd $(git rev-parse --git-dir)
+    _git_dir=$(pwd)
+    cd -
+
+    branches=$(git for-each-ref --shell --format='basename %(refname)' refs/heads/ | sh | grep '^=')
+    # transform_branches=$(for branch in $branches; do
+    #     echo $branch
+    #     done)
+    # echo branches: $branches
+    # echo transform branches: $transform_branches
+
+    NEF_TRANSFORM_CONTAINER_DIR=/repositories
+
+    for branch in $branches; do
+        nef_log "Processing transform branch: $branch"
+
+        # $_work_dir/$branch is where the container can work and leave state
+        # for futures syncs
+        mkdir -p $_work_dir/$branch
+        cd $_work_dir/$branch
+        _git_clone_or_pull $_git_dir =transform $branch
+
+        # _id=$(git ls-tree +try transform/engine)
+
+        # enginepath=transform/engine
+        # _id=$(git ls-tree +try $enginepath | cut -b 13-52)
+        # engine=$(git cat-file -p $_id)
+        engine=$(cat =transform/transform/engine)
+
+        nef_tr_verbose "engine = $engine"
+        type=$(echo $engine | cut -d: -f1)
+        [ "x$type" = xdocker ] || nef_fatal "$enginepath: only the 'docker:' type is supported ('$type')"
+        dockertype=$(echo $engine | cut -d: -f2)
+        dockername=$(echo $engine | cut -d: -f3)
+
+
+        # docker_v_opts="-v $_git_dir:/repository"
+        docker_v_opts="-v $_work_dir/$branch:$NEF_TRANSFORM_CONTAINER_DIR"
+        docker_env_opts=
+        docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_DIR=$NEF_TRANSFORM_CONTAINER_DIR"
+        docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_BRANCH=$branch"
+
+        # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_REPOSITORY=/repository"
+        # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_REPOSITORY=/repository"
+        # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_STATE=/repository/nef-transform/work/$branch"
+
+        case "$dockertype" in
+            image)
+                echo engine: $engine
+                dockercommand=$(echo $engine | cut -d: -f4)
+                [ "x$dockercommand" = x ] && dockercommand=$NEF_TRANSFORM_CONTAINER_DIR/=transform/transform/execute
+                _opts="--rm=true"
+
+                cmd="sudo docker.io run $_opts $docker_v_opts $docker_env_opts $dockername $dockercommand"
+                nef_tr_verbose "Running: $cmd"
+                $cmd
+                ;;
+            container)
+                ;;
+            *)
+                nef_fatal "$enginepath: invalid docker type '$dockertype' (must be 'image' or 'container')"
+                ;;
+        esac
+
+
+    done
 }
 
 nef_tr_filter1()
@@ -48,35 +151,25 @@ nef_tr_filter1()
 ######################################################################
 # COMMAND LINE PARSING
 
+nef_tr_command_argv=()
+nef_av_opt_verbose=no
+
 while [ "$1" != "" ]; do
 
     case "$1" in
-        __status)
-            # _nef_tr_init
-            exit
-            ;;
-        mytest)
-            nef_tr_mytest "$@"
-            exit
-            ;;
-        filter1)
-            nef_tr_filter1 "$@"
-            exit
-            ;;
-        -h)
-	    show_usage
-            exit 0
-	    ;;
-        --help)
-	    show_usage
-            exit 0
-	    ;;
-        -*)
-            nef_usage_error "bad option: $1"
-	    ;;
-        *)
-            nef_usage_error "unknown command: $1"
-            ;;
+        -v | --verbose) nef_av_opt_verbose=yes; shift ;;
+        -h | --help) show_usage; exit 0 ;;
+        -*) nef_usage_error "bad option: $1" ;;
+        *) nef_tr_command_argv=(${nef_tr_command_argv[@]} "$1"); shift ;;
     esac
 
 done
+
+######################################################################
+# RUNTIME
+
+[ "x${nef_tr_command_argv[0]}" = "x" ] && nef_usage_error "missing command"
+nef_tr_command_function_name="nef_tr_command_${nef_tr_command_argv[0]}"
+$nef_tr_command_function_name "${nef_tr_command_argv[@]}" \
+    || nef_fatal "command ${nef_tr_command_argv[0]} returned status $?"
+nef_log "Command returned successfully."

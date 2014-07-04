@@ -60,7 +60,7 @@ if test -f docker-sync.list; then
 
         echo Running image: $image
         echo sudo docker.io run $image git-transform $image
-        opts="--rm=true"
+        _opts="--rm=true"
         sudo docker.io run $_opts $image ls -l /
     done
 
