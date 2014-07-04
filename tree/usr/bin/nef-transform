@@ -14,7 +14,6 @@
 ######################################################################
 # "hard-coded" DEFINITIONS
 
-
 show_usage()
 {
     cat <<EOF
@@ -23,6 +22,9 @@ usage: $0 [options] sync [options]
     -v, --verbose
         Enable verbose
 
+    --debug
+        Enable debug messages (implies --verbose)
+
     -h, --help
         Show usage help
 EOF
@@ -30,20 +32,19 @@ EOF
 }
 nef_tr_verbose()
 {
-    if test "$nef_tr_opt_verbose" = yes; then
+    if [ "$nef_tr_opt_verbose" = yes ]; then
         nef_log "[VERBOSE]" "$@"
         return 0
     fi
     return 1
 }
-
-_nef_tr_chdir_tr_work()
+nef_tr_debug()
 {
-    nef_git_dir=$(git rev-parse --git-dir) || nef_fatal "not in a git repository"
-    cd $nef_git_dir
-    mkdir -p nef-transform || nef_fatal "could not create $PWD/nef-transform"
-    cd nef-transform
-    pwd
+    if [ "$nef_tr_opt_debug" = yes ]; then
+        nef_log "[DEBUG]" "$@"
+        return 0
+    fi
+    return 1
 }
 
 _git_clone_or_pull()
@@ -52,83 +53,121 @@ _git_clone_or_pull()
         cd "$2"
         echo git pull "$1" $3
         redir=
-        [ x$nef_tr_opt_verbose = yes ] || $redir=">/dev/null"
+        # [ x$nef_tr_opt_verbose = yes ] || $redir=">/dev/null"
 
-        git pull "$1" $3 || nef_fatal "could not update repository: $PWD" $redir
+        nef_tr_verbose "Running: git pull '$1' '$3' $redir"
+        git pull "$1" $3 $redir || nef_fatal "could not update repository: $PWD"
         cd -
     else
+        nef_tr_verbose "Running: git clone '$1' '$2' -b $3 $redir"
         git clone "$1" "$2" -b $3 $redir
     fi
 }
 
+nef_tr_command_status()
+{
+    echo status
+}
+
+nef_tr_command_sync_one_transform()
+{
+    NEF_TR_ENGINE_REPOSITORY=/repository.git
+    NEF_TR_BRANCH_SYNC=$1
+    NEF_TR_WORK_REL_DIR=nef-tr/$NEF_TR_BRANCH_SYNC
+    NEF_TR_WORK_DIR=$nef_git_dir/$NEF_TR_WORK_REL_DIR
+    NEF_TR_BRANCH_ENGINE=$(echo $NEF_TR_BRANCH_SYNC | sed 's/+=.*//')
+    NEF_TR_BRANCHES_LIST=$(echo $NEF_TR_BRANCH_SYNC | sed 's/.*+=//' | tr + " ")
+
+    # All "NEF_TR_*" variables are exported to the Docker container
+    NEF_TR_ENGINE_BRANCH_SYNC=$NEF_TR_BRANCH_SYNC
+    NEF_TR_ENGINE_WORK_DIR=$NEF_TR_ENGINE_REPOSITORY/$NEF_TR_WORK_REL_DIR
+    NEF_TR_ENGINE_BRANCH_ENGINE=$NEF_TR_BRANCH_ENGINE
+    NEF_TR_ENGINE_BRANCHES_LIST=$(echo $NEF_TR_BRANCHES_LIST | tr " " ",")
+
+    nef_log "Processing engine=$NEF_TR_BRANCH_ENGINE sync=$NEF_TR_BRANCH_SYNC"
+    # ( set -o posix ; set ) | grep -i nef_tr_; exit
+
+    # $NEF_TR_WORK_DIR is where the container can work and leave state for futures syncs
+    mkdir -p "$NEF_TR_WORK_DIR" || nef_fatal "could not create work dir: $NEF_TR_WORK_DIR"
+    cd "$NEF_TR_WORK_DIR" || nef_fatal "could not chdir to work dir: $NEF_TR_WORK_DIR"
+
+    # mkdir -p $_work_dir/$branch
+    # cd $_work_dir/$branch
+    _git_clone_or_pull "$nef_git_dir" $NEF_TR_BRANCH_ENGINE $NEF_TR_BRANCH_ENGINE
+
+    # _id=$(git ls-tree +try transform/engine)
+
+    # enginepath=transform/engine
+    # _id=$(git ls-tree +try $enginepath | cut -b 13-52)
+    # engine=$(git cat-file -p $_id)
+    engine=$(cat $NEF_TR_BRANCH_ENGINE/engine) || nef_fatal "missing file 'engine' in branch '$NEF_TR_BRANCH_ENGINE'"
+
+    nef_tr_verbose "engine = $engine"
+    type=$(echo $engine | cut -d: -f1)
+    [ "x$type" = xdocker ] || nef_fatal "$enginepath: only the 'docker:' type is supported ('$type')"
+    dockertype=$(echo $engine | cut -d: -f2)
+    dockername=$(echo $engine | cut -d: -f3)
+
+
+    # NEF_TRANSFORM_BRANCH_ENGINE=$branch
+    # NEF_TRANSFORM_BRANCH_SYNC=$branch
+    # NEF_TRANSFORM_BRANCHES_LIST=$_term_branches
+
+    docker_v_opts="-v $nef_git_dir:/$NEF_TR_ENGINE_REPOSITORY"
+    # docker_v_opts="-v $NEF_TR_WORK_DIR:$NEF_TR_ENGINE_WORK_DIR"
+    docker_env_opts=
+    for var in $(compgen -v | grep ^NEF_TR_ENGINE_ ); do
+        nef_tr_debug "Exporting: $var=${!var}"
+        docker_env_opts="$docker_env_opts -e $var=${!var}"
+    done
+
+    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_DIR=$NEF_TRANSFORM_CONTAINER_DIR"
+    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_REPOSITORY=/repository.git"
+    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_BRANCH=$branch"
+    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_TRANSFORMER_BRANCH=$branch"
+    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_TERM_BRANCHES=$_term_branches"
+
+    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_REPOSITORY=/repository"
+    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_REPOSITORY=/repository"
+    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_STATE=/repository/nef-transform/work/$branch"
+
+    case "$dockertype" in
+        image)
+            dockercommand=$(echo $engine | cut -d: -f4)
+            [ "x$dockercommand" = x ] && dockercommand=$NEF_TR_ENGINE_WORK_DIR/$NEF_TR_ENGINE_BRANCH_ENGINE/execute
+            _opts="--rm=true"
+
+            cmd="sudo docker.io run $_opts $docker_v_opts $docker_env_opts $dockername $dockercommand"
+            nef_tr_verbose "Running: $cmd"
+            $cmd
+            ;;
+        container)
+            ;;
+        *)
+            nef_fatal "$enginepath: invalid docker type '$dockertype' (must be 'image' or 'container')"
+            ;;
+    esac
+
+}
+
 nef_tr_command_sync()
 {
-    _work_dir=$(_nef_tr_chdir_tr_work)
-    cd $(git rev-parse --git-dir)
-    _git_dir=$(pwd)
-    cd -
+    # _work_dir=$(_nef_tr_chdir_tr_work)
+    # cd $(git rev-parse --git-dir)
+    # _git_dir=$(pwd)
+    # cd -
 
-    branches=$(git for-each-ref --shell --format='basename %(refname)' refs/heads/ | sh | grep '^=')
+    branches=$(git for-each-ref --shell --format='basename %(refname)' refs/heads/ | sh | grep '+=')
     # transform_branches=$(for branch in $branches; do
     #     echo $branch
     #     done)
     # echo branches: $branches
     # echo transform branches: $transform_branches
 
-    NEF_TRANSFORM_CONTAINER_DIR=/repositories
-
     for branch in $branches; do
-        nef_log "Processing transform branch: $branch"
-
-        # $_work_dir/$branch is where the container can work and leave state
-        # for futures syncs
-        mkdir -p $_work_dir/$branch
-        cd $_work_dir/$branch
-        _git_clone_or_pull $_git_dir =transform $branch
-
-        # _id=$(git ls-tree +try transform/engine)
-
-        # enginepath=transform/engine
-        # _id=$(git ls-tree +try $enginepath | cut -b 13-52)
-        # engine=$(git cat-file -p $_id)
-        engine=$(cat =transform/transform/engine)
-
-        nef_tr_verbose "engine = $engine"
-        type=$(echo $engine | cut -d: -f1)
-        [ "x$type" = xdocker ] || nef_fatal "$enginepath: only the 'docker:' type is supported ('$type')"
-        dockertype=$(echo $engine | cut -d: -f2)
-        dockername=$(echo $engine | cut -d: -f3)
-
-
-        # docker_v_opts="-v $_git_dir:/repository"
-        docker_v_opts="-v $_work_dir/$branch:$NEF_TRANSFORM_CONTAINER_DIR"
-        docker_env_opts=
-        docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_DIR=$NEF_TRANSFORM_CONTAINER_DIR"
-        docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_BRANCH=$branch"
-
-        # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_REPOSITORY=/repository"
-        # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_REPOSITORY=/repository"
-        # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_STATE=/repository/nef-transform/work/$branch"
-
-        case "$dockertype" in
-            image)
-                echo engine: $engine
-                dockercommand=$(echo $engine | cut -d: -f4)
-                [ "x$dockercommand" = x ] && dockercommand=$NEF_TRANSFORM_CONTAINER_DIR/=transform/transform/execute
-                _opts="--rm=true"
-
-                cmd="sudo docker.io run $_opts $docker_v_opts $docker_env_opts $dockername $dockercommand"
-                nef_tr_verbose "Running: $cmd"
-                $cmd
-                ;;
-            container)
-                ;;
-            *)
-                nef_fatal "$enginepath: invalid docker type '$dockertype' (must be 'image' or 'container')"
-                ;;
-        esac
-
-
+        (
+            nef_tr_command_sync_one_transform $branch
+        )
     done
 }
 
@@ -152,12 +191,14 @@ nef_tr_filter1()
 # COMMAND LINE PARSING
 
 nef_tr_command_argv=()
-nef_av_opt_verbose=no
+nef_tr_opt_verbose=no
+nef_tr_opt_debug=no
 
 while [ "$1" != "" ]; do
 
     case "$1" in
-        -v | --verbose) nef_av_opt_verbose=yes; shift ;;
+        -v | --verbose) nef_tr_opt_verbose=yes; shift ;;
+        --debug) nef_tr_opt_debug=yes; nef_tr_opt_verbose=yes; shift ;;
         -h | --help) show_usage; exit 0 ;;
         -*) nef_usage_error "bad option: $1" ;;
         *) nef_tr_command_argv=(${nef_tr_command_argv[@]} "$1"); shift ;;
@@ -169,6 +210,15 @@ done
 # RUNTIME
 
 [ "x${nef_tr_command_argv[0]}" = "x" ] && nef_usage_error "missing command"
+
+# Load $nef_git_dir as absolute path
+_nef_git_dir=$(git rev-parse --git-dir) || nef_fatal "not in a git repository"
+cd $_nef_git_dir
+nef_git_dir=$PWD
+unset _nef_git_dir
+cd -
+
+# Run command
 nef_tr_command_function_name="nef_tr_command_${nef_tr_command_argv[0]}"
 $nef_tr_command_function_name "${nef_tr_command_argv[@]}" \
     || nef_fatal "command ${nef_tr_command_argv[0]} returned status $?"
