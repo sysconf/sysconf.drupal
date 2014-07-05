@@ -16,8 +16,45 @@
 
 show_usage()
 {
+    name=$(basename $0)
     cat <<EOF
-usage: $0 [options] sync [options]
+usage: $name [options] status
+
+    Display helplful information about the sync branches and the up-to-date
+    status and what is to be merged.
+
+
+usage: $name [options] new <engine-branch> <content-branch-1> [<content-branch-2> ...]
+
+    Create a new synchronization branch with the given engine and content branches.
+
+
+usage: $name [options] apply <sync-branch> <commit> [arg-name]
+
+    The parent of <commit> must be a parent of the sync branch's last merge commit.
+
+    If not provided, 'arg-name' is guessed by previous merge commit in
+    <sync-branche>. If it's not possible, an error is thrown.
+
+    It will yield a new commit in the branch <sync-branch> whose HEAD is updated.
+    No other ref would be updated.
+
+
+usage: $name [options] fetch-refs <sync-branch> [single-arg-name] [into-single-ref-name]
+
+    Update the branches from the last merge. Will refuse to update non-fastforwarding
+    changes.
+    By default, all related branches are updated (when needed).
+    'single-arg-name' limits to the given arg/branch
+    'into-single-ref-name' allows to define a custom branch whose name is
+    different from 'single-arg-name'.
+
+
+usage: $name [options] sync [sync-branch]
+
+    Run "apply" commands in batch, then "fetch-refs".
+    If 'sync-branch' is not provided, the command iterates over all sync
+    branches (whose name contains an equal sign "=").
 
     --dev
         Enable development mode (implies --verbose)
@@ -29,14 +66,17 @@ usage: $0 [options] sync [options]
         This way, machine state is preserved, allowing work on the container
         for a later "docker commit".
 
-    -v, --verbose
-        Enable verbose
+
+common options:
 
     --debug
         Enable debug messages (implies --verbose)
 
+    -v, --verbose
+        Show more messages
+
     -h, --help
-        Show usage help
+        Show this usage help
 EOF
 
 }
@@ -61,12 +101,11 @@ _git_clone_or_pull()
 {
     if [ -d "$2" ]; then
         cd "$2"
-        echo git pull "$1" $3
         redir=
         # [ x$nef_tr_opt_verbose = yes ] || $redir=">/dev/null"
 
         nef_tr_verbose "Running: git pull '$1' '$3' $redir"
-        git pull "$1" $3 $redir || nef_fatal "could not update repository: $PWD"
+        git pull --quiet "$1" $3 $redir || nef_fatal "could not update repository: $PWD"
         cd -
     else
         nef_tr_verbose "Running: git clone '$1' '$2' -b $3 $redir"
@@ -74,66 +113,210 @@ _git_clone_or_pull()
     fi
 }
 
-nef_tr_command_status()
+nef_tr_ensure_branch()
 {
-    echo status
+    _branch=$1
+    _ref=$( git show-ref --hash refs/heads/$_branch )
+    if test "x$_ref" = "x"; then
+        tree=$( echo -n "" | git mktree )
+        commit=$( echo "empty tree" | git commit-tree $tree )
+        git update-ref refs/heads/$_branch $commit
+        nef_tr_verbose "Made new orphan branch '$_branch' (HEAD=$commit, tree=$tree)"
+    fi
 }
 
+# For sync branch $NEF_TR_BRANCH_SYNC
+_nef_tr_info_last_merge_commit()
+{
+    git log -n 1 --min-parents=3 --pretty=format:%H $1
+}
+
+_nef_tr_info_sync_branches()
+{
+    git for-each-ref --shell --format='basename %(refname)' refs/heads/ | sh | grep -E '\+?='
+}
+
+_nef_tr_info_sync_args()
+{
+    echo $1 | sed -E 's/[^ ]++?=//' | tr + " " | tr , " "
+}
+
+# usage: $0 <content-branch> [from-merge-commit]
+_nef_tr_info_revlist_tomerge()
+{
+    local content_branch=$1
+    local merge=$2
+
+    [ x$merge != x ] \
+        && range=${merge}..${content_branch} \
+        || range=${content_branch}
+
+    git rev-list $range
+
+    # git log --grep "^nef-transform: *mapped.* into $branch" -E \
+    #     --pretty=format:%B -1 $NEF_TR_BRANCH_SYNC \
+    #     | sed -E 's/.*\].*\[([^]]*)\]/\1/g'
+}
+
+
+############
+
+nef_tr_command_status()
+{
+    pretty=full
+    [ $nef_tr_opt_verbose = yes ] && pretty=raw
+
+    nef_log "Nef-transform STATUS:"
+    for sync_branch in $(_nef_tr_info_sync_branches); do
+        nef_log ""
+        nef_log "- sync branch '$sync_branch'"
+        nef_log ""
+
+        local merge=$(_nef_tr_info_last_merge_commit $sync_branch)
+
+        if [ x$merge = x ]; then
+            nef_log "    NEVER MERGED"
+        else
+            nef_log "    LAST MERGE $merge"
+            git show --pretty=$pretty --no-abbrev-commit $merge | sed 's/^/        /' | nef_log -
+        fi
+
+        for content_branch in $(_nef_tr_info_sync_args $sync_branch); do
+            nef_log ""
+            _ref=$( git show-ref --hash refs/heads/$content_branch )
+            if test "x$_ref" = "x"; then
+                nef_log "    - content branch '$content_branch' DOES NOT EXIST"
+            else
+                nef_log "    - content branch '$content_branch': HEAD at $_ref"
+
+                count_ahead=$(_nef_tr_info_revlist_tomerge $content_branch $merge | wc -l)
+                # count_ahead=$(git rev-list $range | wc -l)
+                if [ $count_ahead -eq 0 ]; then
+                    nef_log "          UP-TO-DATE"
+                else
+                    nef_log "          $count_ahead commit(s) to be merged"
+                fi
+            fi
+        done
+    done
+
+    nef_log ""
+}
+
+
+nef_tr_command_new()
+{
+    shift
+    [ "x$1" = x ] && nef_usage_error
+    engine_branch=$1
+    shift
+    [ "x$1" = x ] && nef_usage_error
+    content_branches="$*"
+
+    [ x$( git show-ref --hash refs/heads/$engine_branch ) = x ] \
+        && nef_fatal "engine branch '$engine_branch' does not exist"
+
+    cs_branches=$(echo $content_branches | tr " " ,)
+    sync_branch="${engine_branch}=${cs_branches}"
+
+    [ x$( git show-ref --hash refs/heads/$sync_branch) = x ] \
+        || nef_fatal "sync branch '$sync_branch' exists already"
+
+    nef_tr_ensure_branch "$sync_branch" || nef_fatal "could not create branch: $sync_branch"
+    nef_log "created branch '$sync_branch' with an initial commit and an empty tree"
+}
+
+nef_tr_command_sync()
+{
+    for branch in $(_nef_tr_info_sync_branches); do
+        (
+            nef_tr_command_sync_one_transform $branch
+        )
+    done
+}
+
+#
+# Try to synchronize around a given transform (a "sync" branch)
+#
 nef_tr_command_sync_one_transform()
 {
     NEF_TR_BRANCH_SYNC=$1
-    NEF_TR_BRANCHES_LIST=($(echo $NEF_TR_BRANCH_SYNC | sed -E 's/[^ ]++?=//' | tr + " " | tr , " "))
+    NEF_TR_BRANCHES_LIST=($(_nef_tr_info_sync_args $NEF_TR_BRANCH_SYNC))
 
     nef_log "Processing transform '$NEF_TR_BRANCH_SYNC'"
 
-    NEF_TR_LAST_MERGE_COMMIT=$(git log -n 1 --min-parents=3 --pretty=format:%H $NEF_TR_BRANCH_SYNC)
+    NEF_TR_LAST_MERGE_COMMIT=$(_nef_tr_info_last_merge_commit $NEF_TR_BRANCH_SYNC)
 
     if [ "x$NEF_TR_LAST_MERGE_COMMIT" = x ]; then
-        echo "No previous merge found in branch '$NEF_TR_BRANCH_SYNC'. Will perform full merge..."
-        echo "We have to perform a full merge..."
+        nef_tr_verbose "No previous merge found in branch '$NEF_TR_BRANCH_SYNC'. Will perform full merge..."
         # echo "Going to merge branch '${branches[1]}' into branch '${branches[0]}'..."
     else
-        echo "Last merge was $NEF_TR_LAST_MERGE_COMMIT (exiting)"
-        git show $NEF_TR_LAST_MERGE_COMMIT
+        nef_tr_verbose "Last merge was $NEF_TR_LAST_MERGE_COMMIT"
+        # git show $NEF_TR_LAST_MERGE_COMMIT
 
-        for _branch in $NEF_TR_BRANCHES_LIST; do
-            _var=NEF_TR_ENGINE_COMMIT_BRA
-        done
+        # for _branch in $NEF_TR_BRANCHES_LIST; do
+        #     _var=NEF_TR_ENGINE_COMMIT_BRA
+        # done
 
-        exit
+        # exit
     fi
 
-    _refs=""
+    _existing_branches=""
 
-    for branch_number in "${!NEF_TR_BRANCHES_LIST[@]}"; do
+    for _number in "${!NEF_TR_BRANCHES_LIST[@]}"; do
         branch_name=${NEF_TR_BRANCHES_LIST[$branch_number]}
+        branch_number=$(( $_number + 1 ))
         _logmsg=
 
-        if [ -f $nef_git_dir/refs/heads/$branch_name ]; then
-            _branch_refs=$branch_name
-            if [ "x$NEF_TR_LAST_MERGE_COMMIT" = x ]; then
-                _logmsg="(from origin of history)"
-            else
-                echo "TODO!"; exit
-                _branch_merged_commit
-                _branch_refs="${_branch_merged_commit}..${branch_name}"
-            fi
-            _refs="$_refs $_branch_refs"
-        else
-            _logmsg="(branch does not exist yet)"
-            _branch_refs="-"
-        fi
-        nef_log "branch $branch_number = $branch_name ; refs = $_branch_refs $_logmsg"
+        # nef_tr_ensure_branch $branch_name
+
+        # if [ -f $nef_git_dir/refs/heads/$branch_name ]; then
+        # _branch_refs=$branch_name
+
+
+        eval NEF_TR_ENGINE_BRANCH_${branch_number}_NAME=$branch_name
+
+
+        # _branch_merged_commit=$(_nef_tr_info_branch_merged $branch_name)
+        # if [ x$_branch_merged_commit = x ]; then
+
+        _branch_head=$( git show-ref --hash refs/heads/$branch_name )
+
+        eval NEF_TR_ENGINE_BRANCH_${branch_number}_COMMIT=$_branch_head
+
+        [ x$_branch_head = x ] || _existing_branches="$_existing_branches $branch_name"
+
+        # if [ "x$NEF_TR_LAST_MERGE_COMMIT" = x ]; then
+        #     # _logmsg="(from origin of history)"
+
+        # else
+        #     # _branch_refs="${_branch_merged_commit}..${branch_name}"
+        #     eval NEF_TR_ENGINE_BRANCH_${branch_number}_COMMIT=$_branch_merged_commit
+        # fi
+
+        # [ x$( git show-ref --hash refs/heads/$branch_name ) = x ] \
+        #     || _refs="$_refs $_branch_refs"
+        # else
+        #     # _logmsg="(branch does not exist yet)"
+        #     # _branch_refs="-"
+        #     nef_fatal "branch '$branch_name' does not exist"
+        # fi
+        # nef_tr_verbose "branch $branch_number = $branch_name ; refs = $_branch_refs $_logmsg"
     done
 
-    if [ "x$_refs" = x ]; then
-        nef_log "No commit range to inspect (do these branches exist?: ${NEF_TR_BRANCHES_LIST[@]})"
-        return
-    fi
+    # if [ "x$_refs" = x ]; then
+    #     nef_fatal "No commit range to inspect (do these branches exist?: ${NEF_TR_BRANCHES_LIST[@]})"
+    # fi
 
     # nef_log "Going to check: $_refs"
 
-    _all_commits=$(git log --pretty=format:%H $_refs)
+    # _all_commits=$(git log --pretty=format:%H $_refs .)
+
+    revs="$_existing_branches"
+    [ x${NEF_TR_LAST_MERGE_COMMIT} = x ] || revs="$revs ^${NEF_TR_LAST_MERGE_COMMIT}"
+    _all_commits=$(git rev-list $revs)
+    nef_tr_verbose "got" $( echo $_all_commits | wc -w ) "commits to merge from rev-list: " $revs
+
     # git log $_refs
     _count=$(echo $_all_commits | wc -w)
     if [ $_count -eq 0 ]; then
@@ -141,20 +324,71 @@ nef_tr_command_sync_one_transform()
         return
     fi
     nef_log "Going to merge $_count commit(s) [$_refs]"
-        # nef_tr_command_sync_run_engine $NEF_TR_BRANCH_SYNC
+    # nef_tr_command_sync_run_engine $NEF_TR_BRANCH_SYNC
+
+    changed_branches=$(
+        (
+            for commit in $_all_commits; do
+                git branch --list --contains $commit | head -n 1
+            done
+        ) | sed 's/*//g' | sort | uniq | xargs echo
+    )
+    if [ $(echo $changed_branches | wc -w) -ne 1 ]; then
+        nef_log "TODO: split range in parts, make temp branch and let the user merge"
+        nef_fatal "Multiple branches have been changed at the same time [$changed_branches]. This is not supported."
+    fi
+
+    NEF_TR_ENGINE_NEW_COMMIT_BRANCH=$(echo $changed_branches)
+    NEF_TR_ENGINE_NEW_COMMIT_BRANCH_ARG=$(
+        echo ${NEF_TR_BRANCHES_LIST[@]} | xargs -n 1 echo \
+            | cat -n | grep $NEF_TR_ENGINE_NEW_COMMIT_BRANCH | sed -E 's/ *([0-9]+).*/\1/'
+    )
 
     for commit in $_all_commits; do
         nef_log "Processing commit $commit"
+        NEF_TR_ENGINE_NEW_COMMIT=$commit
+        NEF_TR_ENGINE_LAST_MERGE_COMMIT=$NEF_TR_LAST_MERGE_COMMIT
+        eval NEF_TR_ENGINE_BRANCH_${NEF_TR_ENGINE_NEW_COMMIT_BRANCH_ARG}_COMMIT=$(git show --pretty=%P ce32ceaa09e256bdef4a60d33f1ded266bc4b988  | cut -d' ' -f1)
+
+        # _branch=$(git branch --list --contains $commit | head -n 1=
+        nef_tr_command_sync_run_engine || nef_fatal "engine failed"
+
+        new_merge_commit=$(_nef_tr_info_last_merge_commit $NEF_TR_BRANCH_SYNC)
+        if [ x$new_merge_commit = x$NEF_TR_LAST_MERGE_COMMIT ]; then
+            nef_fatal "engine did not update anything! branch $NEF_TR_BRANCH_SYNC has not been updated."
+        else
+            nef_log "container done making the new merge commit $new_merge_commit into $NEF_TR_BRANCH_SYNC"
+        fi
+
     done
+
+    nef_log "Finished iterating over commits."
+
+    for branch in ${NEF_TR_BRANCHES_LIST[@]}; do
+        _nef_tr_info_last_merge_commit
+       commit=$(_nef_tr_info_branch_merged $branch)
+        if [ x$commit = x ]; then
+            nef_tr_verbose "  branch '$branch': not updated"
+        else
+            nef_tr_verbose "  branch '$branch': updating ref to $commit"
+            echo git update-ref refs/heads/$branch $commit
+        fi
+    done
+
 }
 
+
+#
+# Execute the transform engine (Docker image or container)
+#
 # Params are given through NEF_TR_* vars
+#
 nef_tr_command_sync_run_engine()
 {
     NEF_TR_ENGINE_REPOSITORY=/repository.git
     NEF_TR_WORK_REL_DIR=nef-tr/$NEF_TR_BRANCH_SYNC
     NEF_TR_WORK_DIR=$nef_git_dir/$NEF_TR_WORK_REL_DIR
-    NEF_TR_BRANCH_ENGINE=$(echo $NEF_TR_BRANCH_SYNC | sed 's/+=.*//')
+    NEF_TR_BRANCH_ENGINE=$(echo $NEF_TR_BRANCH_SYNC | sed -E 's/\+?=.*//')
 
     # All "NEF_TR_*" variables are exported to the Docker container
     NEF_TR_ENGINE_BRANCH_SYNC=$NEF_TR_BRANCH_SYNC
@@ -199,16 +433,6 @@ nef_tr_command_sync_run_engine()
         docker_env_opts="$docker_env_opts -e $var=${!var}"
     done
 
-    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_DIR=$NEF_TRANSFORM_CONTAINER_DIR"
-    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_REPOSITORY=/repository.git"
-    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_BRANCH=$branch"
-    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_TRANSFORMER_BRANCH=$branch"
-    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_TERM_BRANCHES=$_term_branches"
-
-    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_REPOSITORY=/repository"
-    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_REPOSITORY=/repository"
-    # docker_env_opts="$docker_env_opts -e NEF_TRANSFORM_STATE=/repository/nef-transform/work/$branch"
-
     case "$dockertype" in
         image)
             dockercommand=$(echo $engine | cut -d: -f4)
@@ -252,42 +476,6 @@ nef_tr_command_sync_run_engine()
 
 }
 
-nef_tr_command_sync()
-{
-    # _work_dir=$(_nef_tr_chdir_tr_work)
-    # cd $(git rev-parse --git-dir)
-    # _git_dir=$(pwd)
-    # cd -
-
-    branches=$(git for-each-ref --shell --format='basename %(refname)' refs/heads/ | sh | grep '+=')
-    # transform_branches=$(for branch in $branches; do
-    #     echo $branch
-    #     done)
-    # echo branches: $branches
-    # echo transform branches: $transform_branches
-
-    for branch in $branches; do
-        (
-            nef_tr_command_sync_one_transform $branch
-        )
-    done
-}
-
-nef_tr_filter1()
-{
-    echo
-    nef_log "======================================================================"
-    env | grep -i git
-    nef_log "======================================================================"
-    pwd
-    nef_log "======================================================================"
-    ls -l
-    nef_log "======================================================================"
-    git diff --cached
-    nef_log "======================================================================"
-    # export GIT_COMMITTER_NAME=${GIT_COMMITTER_NAME}-bis
-}
-
 
 ######################################################################
 # COMMAND LINE PARSING
@@ -301,8 +489,8 @@ while [ "$1" != "" ]; do
 
     case "$1" in
         --dev) nef_tr_opt_dev=yes; nef_tr_opt_verbose=yes; shift ;;
-        -v | --verbose) nef_tr_opt_verbose=yes; shift ;;
         --debug) nef_tr_opt_debug=yes; nef_tr_opt_verbose=yes; shift ;;
+        -v | --verbose) nef_tr_opt_verbose=yes; shift ;;
         -h | --help) show_usage; exit 0 ;;
         -*) nef_usage_error "bad option: $1" ;;
         *) nef_tr_command_argv=(${nef_tr_command_argv[@]} "$1"); shift ;;
