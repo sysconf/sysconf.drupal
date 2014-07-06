@@ -48,7 +48,7 @@
 #   NEFSYNC_CONFIG_FILE [/etc/default/nef-sync]
 #       Path to common nef-sync configuration
 #
-. /usr/share/bash-nef/util
+. /usr/lib/sysconf.base/common.sh
 
 
 ##################################################
