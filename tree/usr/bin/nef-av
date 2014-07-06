@@ -20,6 +20,7 @@
 #   20140701 first version by JF Gigand <jf@geonef.fr>
 #
 
+
 ######################################################################
 # LIBS
 . /usr/lib/sysconf.base/common.sh
@@ -219,79 +220,20 @@ nef_av_command_argv=()
 while [ "$1" != "" ]; do
 
     case "$1" in
-        -f)
-            nef_av_opt_force=yes
-            ;;
-        --force)
-            nef_av_opt_force=yes
-            ;;
-        -m)
-            nef_av_opt_missing_only=yes
-            shift
-            ;;
-        --missing)
-            nef_av_opt_missing_only=yes
-            shift
-            ;;
-        -oa)
-            nef_av_opt_audio_only=yes
-            shift
-            ;;
-        --audio)
-            nef_av_opt_audio_only=yes
-            shift
-            ;;
-        -ov)
-            nef_av_opt_video_only=yes
-            shift
-            ;;
-        --video)
-            nef_av_opt_video_only=yes
-            shift
-            ;;
-        --extra)
-            [ "x$2" = "x" ] && nef_fatal "$1 requies an argument"
+        -f | --force) nef_av_opt_force=yes; shift ;;
+        -m | --missing) nef_av_opt_missing_only=yes; shift ;;
+        -oa | --audio) nef_av_opt_audio_only=yes; shift ;;
+        -ov | --video) nef_av_opt_video_only=yes; shift ;;
+        -e | --extra) [ "x$2" = "x" ] && nef_usage_error "$1 requies an argument"
             nef_av_opt_extra_array=("${nef_av_opt_extra_array[@]}" $2)
-            shift
-            shift
-            ;;
-        --no-defaults)
-            nef_av_opt_nodefaults=yes
-            shift
-            ;;
-        -s)
-            nef_av_opt_simulate=yes
-            shift
-            ;;
-        --simulate)
-            nef_av_opt_simulate=yes
-            shift
-            ;;
-        -v)
-            nef_av_opt_verbose=yes
-            shift
-            ;;
-        --verbose)
-            nef_av_opt_verbose=yes
-            shift
-            ;;
-        --debug)
-            nef_av_opt_debug=yes
-            shift
-            ;;
-        --help)
-	    show_usage
-            exit 0
-	    ;;
-        -*)
-            echo "bad option: '$1'"
-	    show_usage
-            exit 0
-	    ;;
-        *)
-            nef_av_command_argv=(${nef_av_command_argv[@]} "$1")
-            shift
-            ;;
+            shift; shift ;;
+        --no-defaults) nef_av_opt_nodefaults=yes; shift ;;
+        -s | --simulate) nef_av_opt_simulate=yes; shift ;;
+        -v | --verbose) nef_av_opt_verbose=yes; shift ;;
+        --debug) nef_av_opt_debug=yes; shift ;;
+        --help) show_usage; exit 0 ;;
+        -*) nef_usage_error "bad option: '$1'" ;;
+        *) nef_av_command_argv=(${nef_av_command_argv[@]} "$1"); shift ;;
     esac
 
 done
@@ -326,5 +268,6 @@ fi
 # RUNTIME
 
 nef_av_command_function_name="nef_av_command_${nef_av_command_argv[0]}"
-$nef_av_command_function_name "${nef_av_command_argv[@]}" || nef_fatal "command ${nef_av_command_argv[0]} returned status $?"
+$nef_av_command_function_name "${nef_av_command_argv[@]}" \
+    || nef_fatal "command ${nef_av_command_argv[0]} returned status $?"
 nef_log "Command returned successfully."
