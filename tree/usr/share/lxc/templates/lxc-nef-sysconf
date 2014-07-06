@@ -3,7 +3,7 @@
 # JFG 20140225 - Depends on lxc-debian
 #
 # Examples:
-#   lxc-create -n test -t nef-sysconf -- <sysconf profile name>
+#   lxc-create -n test -t nef-sysconf -- <sysconf-profile-1> <sysconf-profile-2> ...
 #   lxc-create -n test -t nef-sysconf   # will install "sysconf.nef.common" by default
 #
 
@@ -29,22 +29,25 @@ shift
 # User okapi
 # EOF
 
+    profiles=( "$@" )
+    [ "${#profiles[@]}" -gt 0 ] && profiles=(sysconf.nef.common)
+
     sysconf_setup=_sysconf-setup.sh
     sysconfRemoteBase=https://github.com/geonef/
 
     echo "Installing sysconf..."
     mkdir -p $rootfs/sysconf/actual
-    for conf in "$@"; do
-        echo " conf: $conf"
-        echo $conf >>$rootfs/sysconf/actual/deps
+    for profile in "${profiles[@]}"; do
+        echo " profile: $profile"
+        echo $profile >>$rootfs/sysconf/actual/deps
         cd $rootfs/sysconf/
-        git clone $sysconfRemoteBase/$conf.git
+        git clone $sysconfRemoteBase/$profile.git
     done
 
     echo $sysconfRemoteBase >$rootfs/sysconf/repository_root
     SYSCONF_PATH=$rootfs/sysconf sysconf fetch
 
-    chroot $rootfs /sysconf/nef.common/tree/usr/bin/sysconf compile install
+    chroot $rootfs /sysconf/sysconf.base/tree/usr/bin/sysconf compile install
 
     return $?
 }
