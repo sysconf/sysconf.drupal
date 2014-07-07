@@ -5,130 +5,196 @@
 # HISTORY
 #   20140702 first version by JF Gigand <jf@geonef.fr>
 
+[ "x$NEF_DIR_USR" = x ] && NEF_DIR_USR=/usr
+nef_command_name=git-transform
+. $NEF_DIR_USR/share/nef-common/shell-command
+
 
 ######################################################################
-# LIBS
-. /usr/lib/sysconf.base/common.sh
+# DEFAULTS AND FUNCTIONS
+
+# Name of our work dir inside GIT's own .git directory
+#   will set "git_transform_work_path"
+GIT_TRANSFORM_WORK_DIR=$nef_command_name
+
+# Where to look for transform definition files, as a subdirectory
+# of the transform branch tree
+GIT_TRANSFORM_ENGINE_DIR=$nef_command_name
+
+# Where the GIT bare repository lies from within the container FS
+GIT_TRANSFORM_CONTAINER_REPOSITORY=/repository.git
+
+nef_command_usage() {
+    cat <<-EOF
+	$nef_command_callname - manage data transformations through GIT
+
+	TRANSFORM PLUMBING COMMANDS
+
+	  $nef_command_callname mksync <transform-ref>
+
+	      Create a new sync for the given transform which is a tree-ish reference
+	      to a transform engine implementation that provide enough information
+	      to be runned as a Docker container.
+
+	      <transform-ref> can be a branch name, a commit ID or any other tree-ish thing
 
 
-######################################################################
-# "hard-coded" DEFINITIONS
+	  $nef_command_callname show-channels [options] <sync-commit-ref> [<channel-name>]
 
-git=git
-_git_tr_branch=git-transform
-source_work_dir=$PWD
-source_git_dir=$PWD/.git
+	      <sync-commit-ref> is a sync commit reference of which channels must be listed
 
-show_usage()
-{
-    cat <<EOF
-usage: $0 sync
-EOF
+	      <channel-name> is the channel name. Valid values would be given by:
+	      \$($nef_command_callname show-channels --all --name <sync-commit-ref>)
 
+	      --all     Include the "transform" channel in the channel list
+	      --hash    Just print the hash ID
+	      --name    Just print the channel name
+	      --shell   Print "name=ID" lines that can be eval'ed by a shell
+
+
+	  $nef_command_callname apply <sync-commit-ref> <channel-name> <commit-ref>
+
+	      Merge the given commit into the sync, interpreted through the given channel.
+
+	      <sync-commit-ref> is a reference to the sync to base the transform application on.
+
+	      <channel-name> is the name of the channel, like "in", "out", "source",
+              "build"... or "transform". Use the "transform" channel to update the transform
+	      engine (instead of the data).
+
+	      <sync-commit-ref> is a reference to the commit to merge. IT MUST BE SINGLE
+	      COMMIT! Branch refs like "master" can be given, but merging multiple commits
+	      won't work. For that, use "$nef_command_callname" instead.
+
+	EOF
 }
 
-_git_tr_init()
+# args: <subdir> <commit-ref>
+_nef_tr_git_checkout_work()
 {
-    _tr_commit=$( $git show-ref --hash refs/heads/$_git_tr_branch )
-    if test "x$_tr_commit" = "x"; then
-        nef_log "Branch '$_git_tr_branch' does not exist. Creating..."
-        tree=$( echo -n "" | $git mktree )
-        nef_log "tree = $tree"
-        commit=$( echo "empty tree" | $git commit-tree $tree )
-        nef_log "commit = $commit"
-        $git update-ref refs/heads/$_git_tr_branch $commit
+    _wcpath="$1"
+    _commit=$2
+
+    if [ -d "$_wcpath" ]; then
+        cd "$_wcpath"
+        nef_cmd git fetch origin
+    else
+        nef_cmd git clone --no-checkout --reference  "$nef_git_dir" "$nef_git_dir" "$_wcpath" \
+            || nef_fatal "git clone failed, try --debug-verbose"
+        cd "$_wcpath"
     fi
-    # [ -f $_repos_dir/refs/heads/git-transform
-    #     git update-ref
-    # git branch --list --no-abbrev -v | cat
+
+    nef_cmd git reset --hard $_commit || nef_fatal "git reset failed, try --debug-verbose"
+    # nef_cmd git checkout $_commit || nef_fatal "git reset failed, try --debug"
 }
 
-_git_tr_sync()
+# args: <transform-tree-ish> <command> [args] ...
+nef_tr_run_transform_command()
 {
-if test -f docker-sync.list; then
-    nef_array_from_lines syncs "$( cat docker-sync.list  )"
+    nef_log "nef_tr_run_transform_command: args: $*"
+    local _treeish=$1; shift
+    local _command=$1; shift
+    local _transform_work_dir=last-transform
+    local _wcpath="${git_transform_work_path}/${_transform_work_dir}"
 
-    #     old_ifs="$IFS"
-    #     IFS="
-    # "
-    #     syncs=( `cat docker-sync.list` )
-    #     IFS="$old_ifs"
+    _nef_tr_git_checkout_work "$_wcpath" $_treeish
+    cd $_wcpath || nef_fatal "could not chdir to $_wcpath"
+    nef_log -v "updated $_wcpath"
+    [ -f $GIT_TRANSFORM_ENGINE_DIR/$_command ] \
+        || nef_fatal "$GIT_TRANSFORM_ENGINE_DIR/$_command does not exist in transform tree"
 
-    for sync in "${syncs[@]}"; do
-        image=$(echo "$sync" | cut -f1)
-        # image=$(echo "$sync" | cut -f1)
+    local _engine_path=$GIT_TRANSFORM_ENGINE_DIR/engine
+    local _engine=$(cat $_engine_path) || nef_fatal "missing file '${_engine_path}'"
 
-        echo Running image: $image
-        echo sudo docker.io run $image git-transform $image
-        _opts="--rm=true"
-        sudo docker.io run $_opts $image ls -l /
+    nef_log -v "engine spec = $_engine"
+    type=$(echo $_engine | cut -d: -f1)
+    [ "x$type" = xdocker ] || nef_fatal "$_enginepath: only the 'docker:' type is supported ('$type')"
+    dockertype=$(echo $_engine | cut -d: -f2)
+    dockername=$(echo $_engine | cut -d: -f3)
+
+    docker_v_opts="-v $nef_git_dir:$GIT_TRANSFORM_CONTAINER_REPOSITORY"
+    docker_env_opts=
+    for var in $(compgen -v | grep ^GIT_TRANSFORM_CONTAINER_ ); do
+        nef_log --debug "Exporting: $var=${!var}"
+        docker_env_opts="$docker_env_opts -e $var=${!var}"
     done
 
-fi
+    case "$dockertype" in
+        image)
+            nef_cmd --debug-name DOCKER sudo \
+                docker.io run -t -i $_docker_opts $docker_v_opts $docker_env_opts $dockername \
+                "${GIT_TRANSFORM_CONTAINER_REPOSITORY}/${GIT_TRANSFORM_WORK_DIR}/${_transform_work_dir}/${GIT_TRANSFORM_ENGINE_DIR}/${_command}" \
+                "$@"
+            ;;
+        container)
+            nef_fatal "docker type 'container' not implemented yet"
+            ;;
+        *)
+            nef_fatal "$_engine_path: invalid docker type '$dockertype' (must be 'image' or 'container')"
+            ;;
+    esac
 
 }
 
-_git_tr_in_container()
-{
-    dest_work_dir=$source_git_dir/transform/work
+nef_tr_command_mksync() {
+    [ "x$1" = x ] && nef_fatal_usage "missing arg: <transform-commit>"
 
-    [ -d /repository ] || nef_fatal "/repository does not exist as a directory"
-    cd /repository
-    git status >/dev/null || nef_fatal "/repository is not a Git working tree"
+    _treeish="$1"; shift
 
-    if test -d $dest_work_dir; then
-        rm -rf $dest_work_dir || nef_fatal "could not remove $dest_work_dir"
-    fi
+    git cat-file -e "$_treeish" \
+        || nef_fatal_usage "given <transform-commit> does not represent a valid commit"
 
-    # Clone or init (if out branch non-existant)
-    branch=toto
-    hasbranch=yes
-    if test -f .git/refs/heads/$branch; then
-        git clone . -b $branch .git/transform/work || nef_fatal "could not create work tree of branch $branch"
-        cd .git/transform/work
-    else
-        git init .git/transform/work || nef_fatal "could not init git repos in .git/transform/work"
-        cd .git/transform/work
-        git co -b $branch
-    fi
-    # git status
-    git remote -v
-    # mkdir -p .git/transform/work || nef_fatal "cannot mkdir .git/transform/work"
+    nef_log _treeish=$_treeish
+    _treeish=$(git rev-parse "$_treeish")
+    nef_log _treeish=$_treeish
+
+    nef_tr_run_transform_command $_treeish mksync "$@"
 }
 
+nef_tr_command_show_channels() {
+    nef_tr_run_transform_command show-channels "$@"
+}
+
+nef_tr_command_apply() {
+    nef_tr_run_transform_command apply "$@"
+}
+
+nef_command_merge_env
 
 ######################################################################
-# COMMAND LINE PARSING
+# COMMAND LINE & RUN
+
+nef_command_init_options
+nef_tr_command_argv=()
 
 while [ "$1" != "" ]; do
 
     case "$1" in
-        init)
-            _git_tr_init
-            exit
-            ;;
-        sync)
-            _git_tr_sync "$@"
-            exit
-            ;;
-        in-container)
-            _git_tr_in_container
-            exit
-            ;;
-        -h)
-	    show_usage
-            exit 0
-	    ;;
-        --help)
-	    show_usage
-            exit 0
-	    ;;
-        -*)
-            nef_usage_error "bad option: $1"
-	    ;;
-        *)
-            nef_usage_error "unknown command: $1"
-            ;;
+        -v | --verbose) nef_opt_show_verbose=yes; shift ;;
+        -vv | --debug-verbose) nef_opt_show_verbose=yes; nef_opt_show_debug=yes; shift ;;
+        -h | --help) nef_show_usage; exit 0 ;;
+        -*) nef_fatal_usage "bad option: $1" ;;
+        *) nef_tr_command_argv=(${nef_tr_command_argv[@]} "$1"); shift ;;
     esac
 
 done
+
+[ "x${nef_tr_command_argv[0]}" = "x" ] && nef_fatal_usage "missing command"
+
+# Load $nef_git_dir as absolute path
+_nef_git_dir=$(git rev-parse --git-dir) || nef_fatal "not in a git repository"
+cd $_nef_git_dir
+nef_git_dir=$PWD
+unset _nef_git_dir
+cd - >/dev/null
+
+# Repository-specific variables
+git_transform_work_path="${nef_git_dir}/${GIT_TRANSFORM_WORK_DIR}"
+
+
+# Run command
+nef_tr_command_function_name="nef_tr_command_${nef_tr_command_argv[0]}"
+unset nef_tr_command_argv[0]
+$nef_tr_command_function_name "${nef_tr_command_argv[@]}" \
+    || nef_fatal "command ${nef_tr_command_argv[0]} returned status $?"
+nef_log "Command returned successfully."
