@@ -5,9 +5,11 @@
 # HISTORY
 #   20140702 first version by JF Gigand <jf@geonef.fr>
 
-[ "x$NEF_DIR_USR" = x ] && NEF_DIR_USR=/usr
+# [ "x$NEF_DIR_USR" = x ] && NEF_DIR_USR=/usr
 nef_command_name=git-transform
-. $NEF_DIR_USR/share/nef-common/shell-command
+. $(dirname $0)/../share/nef-common/shell-command || exit 2
+
+# . $NEF_DIR_USR/share/nef-common/shell-command
 
 
 ######################################################################
@@ -77,40 +79,50 @@ _nef_tr_git_checkout_work()
 
     if [ -d "$_wcpath" ]; then
         cd "$_wcpath"
-        nef_cmd git fetch origin
+        nef_cmd git fetch --quiet origin
     else
-        nef_cmd git clone --no-checkout --reference  "$nef_git_dir" "$nef_git_dir" "$_wcpath" \
+        nef_cmd git clone --quiet --no-checkout --reference  "$nef_git_dir" "$nef_git_dir" "$_wcpath" \
             || nef_fatal "git clone failed, try --debug-verbose"
         cd "$_wcpath"
     fi
 
-    nef_cmd git reset --hard $_commit || nef_fatal "git reset failed, try --debug-verbose"
+    nef_cmd git reset --quiet --hard $_commit || nef_fatal "git reset failed, try --debug-verbose"
     # nef_cmd git checkout $_commit || nef_fatal "git reset failed, try --debug"
 }
 
 # args: <transform-tree-ish> <command> [args] ...
 nef_tr_run_transform_command()
 {
-    nef_log "nef_tr_run_transform_command: args: $*"
-    local _treeish=$1; shift
+    local _transform_commit=$1; shift
     local _command=$1; shift
-    local _transform_work_dir=last-transform
-    local _wcpath="${git_transform_work_path}/${_transform_work_dir}"
+    local _last_transform_dir=last-transform
+    local _wcpath="${git_transform_work_path}/${_last_transform_dir}"
 
-    _nef_tr_git_checkout_work "$_wcpath" $_treeish
+    _nef_tr_git_checkout_work "$_wcpath" $_transform_commit
     cd $_wcpath || nef_fatal "could not chdir to $_wcpath"
-    nef_log -v "updated $_wcpath"
-    [ -f $GIT_TRANSFORM_ENGINE_DIR/$_command ] \
-        || nef_fatal "$GIT_TRANSFORM_ENGINE_DIR/$_command does not exist in transform tree"
+    nef_log -v "Updated $_wcpath"
+
+    if [ "x$_command" != x_shell ]; then
+        [ -f $GIT_TRANSFORM_ENGINE_DIR/$_command ] \
+            || nef_fatal "$GIT_TRANSFORM_ENGINE_DIR/$_command does not exist in transform tree"
+    fi
 
     local _engine_path=$GIT_TRANSFORM_ENGINE_DIR/engine
     local _engine=$(cat $_engine_path) || nef_fatal "missing file '${_engine_path}'"
 
-    nef_log -v "engine spec = $_engine"
+    nef_log --debug "engine spec = $_engine"
     type=$(echo $_engine | cut -d: -f1)
     [ "x$type" = xdocker ] || nef_fatal "$_enginepath: only the 'docker:' type is supported ('$type')"
     dockertype=$(echo $_engine | cut -d: -f2)
     dockername=$(echo $_engine | cut -d: -f3)
+
+    GIT_TRANSFORM_CONTAINER_CHANNEL_TRANSFORM=$_transform_commit
+    GIT_TRANSFORM_CONTAINER_GIT_AUTHOR_NAME=$(git config user.name)
+    GIT_TRANSFORM_CONTAINER_GIT_AUTHOR_EMAIL=$(git config user.email)
+    GIT_TRANSFORM_CONTAINER_LOG=$GIT_TRANSFORM_CONTAINER_REPOSITORY/${GIT_TRANSFORM_WORK_DIR}/${_last_transform_dir}/log
+
+    rm -f log
+    touch log
 
     docker_v_opts="-v $nef_git_dir:$GIT_TRANSFORM_CONTAINER_REPOSITORY"
     docker_env_opts=
@@ -119,12 +131,17 @@ nef_tr_run_transform_command()
         docker_env_opts="$docker_env_opts -e $var=${!var}"
     done
 
+    _full_command_path="${GIT_TRANSFORM_CONTAINER_REPOSITORY}/${GIT_TRANSFORM_WORK_DIR}/${_last_transform_dir}/${GIT_TRANSFORM_ENGINE_DIR}/${_command}"
+    [ "$_command" = _shell ] && _full_command_path=/bin/bash
+
     case "$dockertype" in
         image)
+            nef_log -v "Running Docker image '${dockername}' for command '${_command}'"
             nef_cmd --debug-name DOCKER sudo \
-                docker.io run -t -i $_docker_opts $docker_v_opts $docker_env_opts $dockername \
-                "${GIT_TRANSFORM_CONTAINER_REPOSITORY}/${GIT_TRANSFORM_WORK_DIR}/${_transform_work_dir}/${GIT_TRANSFORM_ENGINE_DIR}/${_command}" \
+                docker.io run -t -i --rm=true $_docker_opts $docker_v_opts $docker_env_opts $dockername \
+                $_full_command_path \
                 "$@"
+            cat log | nef_log_pipe --verbose "TRANSFORM:"
             ;;
         container)
             nef_fatal "docker type 'container' not implemented yet"
@@ -136,19 +153,23 @@ nef_tr_run_transform_command()
 
 }
 
+_to_git_tree()
+{
+    git cat-file -e "$1" || nef_fatal "'$1' is not a tree-ish object"
+    git rev-parse "$1" || nef_fatal "'$1' could not be resolved to a commit"
+}
+nef_tr_command_shell() {
+    [ "x$1" = x ] && nef_fatal_usage "missing arg: <transform-commit>"
+    _transform_commit="$1"; shift
+
+    nef_tr_run_transform_command $(_to_git_tree "$_transform_commit") _shell "$@"
+}
+
 nef_tr_command_mksync() {
     [ "x$1" = x ] && nef_fatal_usage "missing arg: <transform-commit>"
+    _transform_commit="$1"; shift
 
-    _treeish="$1"; shift
-
-    git cat-file -e "$_treeish" \
-        || nef_fatal_usage "given <transform-commit> does not represent a valid commit"
-
-    nef_log _treeish=$_treeish
-    _treeish=$(git rev-parse "$_treeish")
-    nef_log _treeish=$_treeish
-
-    nef_tr_run_transform_command $_treeish mksync "$@"
+    nef_tr_run_transform_command $(_to_git_tree "$_transform_commit") mksync "$@"
 }
 
 nef_tr_command_show_channels() {
@@ -197,4 +218,4 @@ nef_tr_command_function_name="nef_tr_command_${nef_tr_command_argv[0]}"
 unset nef_tr_command_argv[0]
 $nef_tr_command_function_name "${nef_tr_command_argv[@]}" \
     || nef_fatal "command ${nef_tr_command_argv[0]} returned status $?"
-nef_log "Command returned successfully."
+nef_log -v "Command returned successfully."
