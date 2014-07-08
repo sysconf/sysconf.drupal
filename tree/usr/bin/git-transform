@@ -41,12 +41,12 @@ nef_command_usage() {
 	      <transform-ref> can be a branch name, a commit ID or any other tree-ish thing
 
 
-	  $nef_command_callname show-channels [options] <sync-commit-ref> [<channel-name>]
+	  $nef_command_callname channels [options] <sync-commit-ref> [<channel-name>]
 
 	      <sync-commit-ref> is a sync commit reference of which channels must be listed
 
 	      <channel-name> is the channel name. Valid values would be given by:
-	      \$($nef_command_callname show-channels --all --name <sync-commit-ref>)
+	      \$($nef_command_callname channels --all --name <sync-commit-ref>)
 
 	      --all     Include the "transform" channel in the channel list
 	      --hash    Just print the hash ID
@@ -93,9 +93,11 @@ _nef_tr_git_checkout_work()
 # args: <transform-tree-ish> <command> [args] ...
 nef_tr_run_transform_command()
 {
+    nef_log --debug "nef_tr_run_transform_command() args:" "$@"
+
     local _transform_commit=$1; shift
     local _command=$1; shift
-    local _last_transform_dir=last-transform
+    local _last_transform_dir=$(git name-rev --name-only $_transform_commit | sed 's/~.*//')
     local _wcpath="${git_transform_work_path}/${_last_transform_dir}"
 
     _nef_tr_git_checkout_work "$_wcpath" $_transform_commit
@@ -139,9 +141,12 @@ nef_tr_run_transform_command()
             nef_log -v "Running Docker image '${dockername}' for command '${_command}'"
             nef_cmd --debug-name DOCKER sudo \
                 docker.io run -t -i --rm=true $_docker_opts $docker_v_opts $docker_env_opts $dockername \
-                $_full_command_path \
-                "$@"
-            cat log | nef_log_pipe --verbose "TRANSFORM:"
+                $_full_command_path "$@" \
+                | sed 's/\r$//' \
+                || nef_fatal "failed running docker image, try --debug"
+            # the sed expr "\r\n" -> "\n" is because of https://github.com/dotcloud/docker/issues/1755
+
+            cat log | sed 's/\r$//' | nef_log_pipe --verbose "container log:"
             ;;
         container)
             nef_fatal "docker type 'container' not implemented yet"
@@ -151,41 +156,94 @@ nef_tr_run_transform_command()
             ;;
     esac
 
+    cd ..
+
+    if [ "$_last_transform_dir" = "undefined" ]; then
+        nef_log -v "Removing work directory: $_last_transform_dir"
+        rm -rf $_last_transform_dir \
+            || nef_log "Warning: could not remove work directory: $_last_transform_dir"
+    else
+        nef_log --debug "Not removing work directory for possible later use: $PWD/$_last_transform_dir"
+    fi
+
 }
 
-_to_git_tree()
+_to_git_commit()
 {
-    git cat-file -e "$1" || nef_fatal "'$1' is not a tree-ish object"
+    git cat-file -e "$1" || nef_fatal "'$1' does not represent a commit object"
     git rev-parse "$1" || nef_fatal "'$1' could not be resolved to a commit"
 }
+_git_parent_of()
+{
+    git log -1 --pretty=%P $1 | sed 's/ .*//'
+}
+_sync_to_transform_commit() {
+    git cat-file -p $1 \
+        | grep "^git-transform-channel-transform:" \
+        | sed -E 's/^[^:]+: (.*)/\1/' \
+        || nef_fatal "'$1' is not a valid sync commit"
+}
+
 nef_tr_command_shell() {
     [ "x$1" = x ] && nef_fatal_usage "missing arg: <transform-commit>"
-    _transform_commit="$1"; shift
+    _transform_commit=$(_to_git_commit "$1") \
+        || nef_fatal_usage "invalid arg: <transform-commit>"
+    shift
 
-    nef_tr_run_transform_command $(_to_git_tree "$_transform_commit") _shell "$@"
+    nef_tr_run_transform_command "$_transform_commit" _shell "$@"
 }
 
 nef_tr_command_mksync() {
     [ "x$1" = x ] && nef_fatal_usage "missing arg: <transform-commit>"
-    _transform_commit="$1"; shift
+    _transform_commit=$(_to_git_commit "$1") \
+        || nef_fatal_usage "invalid arg: <transform-commit>"
+    shift
 
-    nef_tr_run_transform_command $(_to_git_tree "$_transform_commit") mksync "$@"
+    nef_tr_run_transform_command "$_transform_commit" mksync "$@"
 }
 
-nef_tr_command_show_channels() {
-    nef_tr_run_transform_command show-channels "$@"
+nef_tr_command_channels() {
+    [ "x$1" = x ] && nef_fatal_usage "missing arg: <sync-commit>"
+    GIT_TRANSFORM_CONTAINER_SYNC=$(_to_git_commit "$1") \
+        || nef_fatal_usage "invalid arg: <sync-commit>"
+    shift
+    _transform_commit=$(_sync_to_transform_commit $GIT_TRANSFORM_CONTAINER_SYNC)
+
+    nef_tr_run_transform_command "$_transform_commit" \
+        channels "$@" \
+        | sort $next
+
+    # env
 }
 
 nef_tr_command_apply() {
-    nef_tr_run_transform_command apply "$@"
+    [ "x$1" = x ] && nef_fatal_usage "missing arg: <sync-commit>"
+    GIT_TRANSFORM_CONTAINER_SYNC=$(_to_git_commit "$1") \
+        || nef_fatal_usage "invalid arg: <sync-commit>"
+    shift
+
+    [ "x$1" = x ] && nef_fatal_usage "missing arg: <channel>"
+    GIT_TRANSFORM_CONTAINER_APPLY_CHANNEL="$1"
+    shift
+
+    [ "x$1" = x ] && nef_fatal_usage "missing arg: <content-commit>"
+    GIT_TRANSFORM_CONTAINER_APPLY_COMMIT=$(_to_git_commit "$1") \
+        || nef_fatal_usage "invalid arg: <content-commit>"
+    shift
+
+    _transform_commit=$(_sync_to_transform_commit $GIT_TRANSFORM_CONTAINER_SYNC)
+
+    nef_tr_run_transform_command "$_transform_commit" \
+        apply "$@"
 }
 
-nef_command_merge_env
 
 ######################################################################
 # COMMAND LINE & RUN
 
+nef_command_merge_env
 nef_command_init_options
+
 nef_tr_command_argv=()
 
 while [ "$1" != "" ]; do
