@@ -73,6 +73,55 @@ nef_command_usage() {
 	      Use --verbose (or -v) to show stdout/stderr from commands
 	      Use --debug-verbose (or -vv) to pass --debug-verbose to the git-transform commands
 
+	TRANSFORM HELPER COMMANDS
+
+	  $nef_command_callname checkout-refs  [ --update [--force] [--no-delete] | --create ] [ --force ] <sync-commit-ref> <ref-prefix> [<channel>]
+
+	    if <ref-prefix> does not include a slash, "refs/transform/" is prepend to it
+	    iterate over $(git-transform show-channels) and execute:
+	        git update-ref <ref-prefix>/${CHANNEL_NAME}  ${CHANNEL_VALUE}
+
+	  $nef_command_callname check-refs <ref-prefix>
+
+	    if <ref-prefix> does not include a slash, "refs/transform/" is prepend to it
+	    vérifie que <ref-prefix>/merge-state existe
+	    vérifier que <ref-prefix>/* sont à jour du commit pointé par 'merge-state' et qu'il ne manque rien
+	    options --ignore-extra --ignore-missing qui vont bien
+
+	TRANSFORM PORCELAIN COMMANDS
+
+	  $nef_command_callname add <sync-name> [<remote-url>] <transform-ref>
+
+	    initialise la synchro <sync-name> avec le transform <transform-ref> avec les refs/transform/<sync-name>
+	    capable de fetcher si <transform-ref> est indique un protocole/chemin, à la manière de "git-subtree pull"
+	    low-level : git-transform checkout-refs --create \$( git-transform mksync <transform-ref> ) <sync-name>
+
+	  $nef_command_callname checkout <sync-name> <channel> [<branch>]
+
+	    si <branch> existe : ne fait rien, indique un warning et indique la différence de commits
+	    sinon crée la/les branche(s)
+
+	  $nef_command_callname tracking add branch <sync-name> <channel>
+
+	  $nef_command_callname push [<sync-name> [ <branch>[:<channel>] ... ]
+
+	    comme git push
+	    intègre l'A/R : si plusieurs channel sont des "upstream" de branches locales, le pull automatique est possible avec --pull
+	    en fait très malin, est capable de détecter ce qui va se passer récursivement
+
+	  $nef_command_callname pull [<sync-name>]
+
+	    le fetch n'a pas de sens (déjà là et les channels sont toujours à jour)
+	    équivalent à un merge, mais apporte le batch (sync automatique d'après trackings)
+
+	  $nef_command_callname status [<sync-name> [<channel>]]
+
+	    liste <sync-name> (ou tous les sync)
+	    les channels, leur état, dernier commit si mappé ou source
+	    les branches qui les track et leur état de retard/avance sur le channel
+
+	  $nef_command_callname sync [<sync-name>]
+
 	EOF
 }
 
@@ -148,12 +197,35 @@ nef_tr_command_apply() {
     shift
 
     _transform_commit=$(_sync_to_transform_commit $GIT_TRANSFORM_CONTAINER_SYNC)
-    [ -z "$_transform_commit" ] && nef_fatal "could not find the transform out of sync commit $GIT_TRANSFORM_CONTAINER_SYNC"
+    [ -z "$_transform_commit" ] && nef_fatal
 
     local _commit=$(nef_tr_run_transform_command "$_transform_commit" apply "$@")
     [ -z "$_commit" ] && nef_fatal "container did not return a valid commit"
 
     echo $_commit
+}
+
+nef_tr_command_checkout-refs() {
+    [ -z "$1" ] && nef_fatal_usage "missing arg: <sync-commit>"
+    _sync_commit=$(_to_git_commit "$1") || nef_fatal_usage "invalid arg: <sync-commit>"
+    shift
+    [ -z "$1" ] && nef_fatal_usage "missing arg: <ref-prefix>"
+    local _ref_prefix="$1"; shift
+    local _channel="$1"
+
+    _transform_commit=$(_sync_to_transform_commit $_sync_commit)
+    [ -z "$_transform_commit" ] && nef_fatal
+
+    # nef_tr_opt_all=yes
+    # nef_tr_opt_channel_format=shell
+    # nef_tr_command_channels $_sync_commit channels
+# local _channels="$(nef_tr_command_channels $_transform_commit channels | sed -r 's/^([^=]+)=(.*)$/_zchannels[\1]=\2'/)"
+    local _channels="$(nef_tr_command_channels $_transform_commit channels)"
+    # local _channels=$(nef_tr_run_transform_command "$_transform_commit" channels )
+    echo --$_channels--
+    # [ -z "$_commit" ] && nef_fatal "container did not return a valid commit"
+
+    # git update-ref <ref-prefix>/${CHANNEL_NAME}  ${CHANNEL_VALUE}
 }
 
 ######################################################################
@@ -172,7 +244,7 @@ _sync_to_transform_commit() {
     git cat-file -p $1 \
         | grep "^git-transform-channel-transform:" \
         | sed -E 's/^[^:]+: (.*)/\1/' \
-        || nef_fatal "'$1' is not a valid sync commit"
+        || nef_fatal "could not find the transform out of sync commit $1"
 }
 
 # args: <subdir> <commit-ref>
@@ -229,8 +301,7 @@ nef_tr_run_transform_command()
     GIT_TRANSFORM_CONTAINER_GIT_AUTHOR_EMAIL=$(git config user.email)
     GIT_TRANSFORM_CONTAINER_LOG=$GIT_TRANSFORM_CONTAINER_REPOSITORY/${GIT_TRANSFORM_WORK_DIR}/${_last_transform_dir}/log
 
-    rm -f log
-    touch log
+    rm -f log ; touch log
 
     local _docker_opts
     local docker_v_opts="-v $nef_git_dir:$GIT_TRANSFORM_CONTAINER_REPOSITORY"
