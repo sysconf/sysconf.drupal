@@ -362,7 +362,7 @@ _test_cmd_tr()
     _test_cmd "$nef_command_callname" $_opts "$@"
 }
 _test_echo() {
-    nef_log "TEST RUN ECHO:" "# $@"
+    nef_log "TEST ECHO:" "$@"
 }
 nef_tr_command_test() {
     [ -z "$1" ] && nef_fatal_usage "missing arg: <transform-commit>"
