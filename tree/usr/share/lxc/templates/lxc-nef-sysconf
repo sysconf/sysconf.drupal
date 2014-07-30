@@ -31,7 +31,11 @@ configure_sysconf()
 
     profiles=( "$@" )
 
-    sysconf_setup=_sysconf-setup.sh
+    # echo Starting shell...
+    # chroot $rootfs /bin/bash
+
+    # Fix ca-certificates to avoid "WARNING: The following packages cannot be authenticated!"
+    chroot $rootfs /usr/bin/apt-get --assume-yes --force-yes install ca-certificates || return $?
 
     echo
     echo "Installing sysconf..."
@@ -58,7 +62,7 @@ configure_sysconf()
     echo $LXC_NEF_SYSCONF_REPOSITORY_BASE >$rootfs/sysconf/repository_base
     SYSCONF_PATH=$rootfs/sysconf sysconf fetch
 
-    chroot $rootfs /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update
+    # chroot $rootfs /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update
 
     return $?
 }
