@@ -26,52 +26,153 @@ GIT_TRANSFORM_ENGINE_DIR=$nef_command_name
 GIT_TRANSFORM_CONTAINER_REPOSITORY=/repository.git
 
 
-nef_tr_command_shell() {
-    [ -z "$1" ] && nef_fatal_usage "missing arg: <transform-commit>"
-    _transform_commit=$(_to_git_commit "$1") \
-        || nef_fatal_usage "invalid arg: <transform-commit>"
-    shift
-
-    nef_tr_run_transform_command "$_transform_commit" _shell "$@"
-}
-
-
 ################################################################################
 ### TRANSFORM PORCELAIN COMMANDS
 
-# command: add <sync-name> [<remote-url>] <transform-ref>
+# command: status [<sync-name> [<channel>]]
 #
-# initialise la synchro <sync-name> avec le transform <transform-ref> avec les refs/transform/<sync-name>
-# capable de fetcher si <transform-ref> est indique un protocole/chemin, à la manière de "git-subtree pull"
-# low-level : git-transform checkout-refs --create \$( git-transform mksync <transform-ref> ) <sync-name>
+# Shows a list the synchronizations which have been defined as refs.
+# If <sync-name> is specified, the list is restricted to the given sync.
+# If <channel> is specified, other channels than <channel> won't be shown.
 ##
+nef_tr_command_status() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help apply; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command add "too many args"
+    local _name="${_argv[0]}"
+    local _channel="${_argv[1]}"
+
+    [ -z "$_name" ] && _name='*'
+    [ -z "$_channel" ] && _channel='*'
+
+    local _sync_ref=
+    local _sync_refs=$(git for-each-ref --format="%(refname)" "refs/transform/$_name/SYNC")
+    for _sync_ref in $_sync_refs; do
+        local _sync_name=$(basename $(dirname $_sync_ref))
+        local _sync_commit=$(git show-ref --hash $_sync_ref)
+        nef_log "SYNC $_sync_name"
+        nef_log "    REF $_sync_ref"
+        nef_log "    COMMIT $_sync_commit"
+
+        git cat-file -p $_sync_commit | sed 's/^/        /' | nef_log_pipe -v
+
+        local _channel_ref=
+        local _channel_refs=$(git for-each-ref --format="%(refname)" "refs/transform/$_sync_name/$_channel" | grep -v SYNC)
+        for _channel_ref in $_channel_refs; do
+            local _channel_name=$(basename $_channel_ref)
+            local _channel_commit=$(git show-ref --hash $_channel_ref)
+
+            nef_log ""
+            nef_log "    CHANNEL ${_channel_name}"
+            nef_log "        REF $_channel_ref"
+            nef_log "        COMMIT $_channel_commit"
+            git cat-file -p $_channel_commit | sed 's/^/            /' | nef_log_pipe -v
+        done
+    done
+}
+
+# command: add <sync-name> <transform-ref>
+#
+# Initialize a new synchronisation based on the transform tree-ish <transform-ref>.
+#
+# A sync commit is created by the transform engine and refs are updated
+# under refs/transform/<sync-name>/SYNC and channels'.
+##
+nef_tr_command_add() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help apply; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 2 ] && nef_fatal_usage_command add "missing arg(s)"
+    [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command add "too many args"
+    local _name="${_argv[0]}"
+    local _transform_ref="${_argv[1]}"
+
+    local _commit="$(nef_tr_command_mksync $_transform_ref)"
+    [ -z "$_commit" ] && nef_fatal "mksync did not return a valid commit"
+
+    nef_tr_command_checkout-refs $_commit $_name
+}
+
+# command: rm <sync-name>
+#
+# Remove all references related to synchronisation <sync-name>.
+##
+nef_tr_command_rm() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help apply; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command add "missing arg(s)"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command add "too many args"
+    local _name="${_argv[0]}"
+
+    git for-each-ref --format="git update-ref -d %(refname)" --shell "refs/transform/$_name/" \
+        | xargs -d "\n" -n 1 sh -c \
+        || nef_fatal "failed to remove 1 or more refs"
+}
 
 # command: checkout <sync-name> <channel> [<branch>]
 #
+#   <branch> defaults to <channel>
 # si <branch> existe : ne fait rien, indique un warning et indique la différence de commits
 # sinon crée la/les branche(s)
-##
-
-# command: tracking add branch <sync-name> <channel>
 #
+# This sets <branch> -> <channel> tracking information into git-config(1).
+##
+#
+
 # command: push [<sync-name> [ <branch>[:<channel>] ... ]
 #
 # comme git push
 # intègre l'A/R : si plusieurs channel sont des "upstream" de branches locales, le pull automatique est possible avec --pull
 # en fait très malin, est capable de détecter ce qui va se passer récursivement
 ##
+nef_tr_command_push() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help apply; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 2 ] && nef_fatal_usage_command add "missing arg(s)"
+    [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command add "too many args"
+    local _name="${_argv[0]}"
+    local _pushref="${_argv[1]}"
+    local _branch=$(echo $_pushref | cut -d: -f1)
+    local _channel=$(echo $_pushref | cut -d: -f2)
+
+    # ...
+}
 
 # command: pull [<sync-name>]
 #
 # le fetch n'a pas de sens (déjà là et les channels sont toujours à jour)
 # équivalent à un merge, mais apporte le batch (sync automatique d'après trackings)
-##
-
-# command: status [<sync-name> [<channel>]]
-#
-# liste <sync-name> (ou tous les sync)
-# les channels, leur état, dernier commit si mappé ou source
-# les branches qui les track et leur état de retard/avance sur le channel
 ##
 
 # command: help [command]
@@ -83,10 +184,12 @@ nef_tr_command_shell() {
 nef_tr_command_help() {
     local _argv=()
     local _command=
+    local _usage=0
 
     while [ -n "$1" ]; do
         case "$1" in
-            -h) nef_tr_command_help help; shift ;;
+            --usage) _usage=1; shift ;;
+            -h) nef_tr_command_help help; return ;;
             -*) nef_tr_eval_common_option "$1"; shift ;;
             *) _command="$1"; break ;;
         esac
@@ -113,7 +216,7 @@ nef_tr_command_help() {
             if test "$_keep_showing" -ne 0; then
                 if echo "$REPLY" | grep -qE "^##"; then
                     _keep_showing=0
-                    return
+                    exit
                 else
                     echo "$_line"
                     continue
@@ -127,7 +230,7 @@ nef_tr_command_help() {
                 if test -n "$_command"; then
                     if test "$_command" = "$_command_name"; then
                         echo "usage: $nef_command_callname $_command $_command_args"
-                        _keep_showing=1
+                        [ $_usage -eq 0 ] && _keep_showing=1
                     fi
                 else
                     echo -e "    $_command_name\t$_command_args"
@@ -158,28 +261,32 @@ nef_tr_command_help() {
 #       git update-ref <ref-prefix>/${CHANNEL_NAME}  ${CHANNEL_VALUE}
 ##
 nef_tr_command_checkout-refs() {
-    [ -z "$1" ] && nef_fatal_usage "missing arg: <sync-commit>"
-    _sync_commit=$(_to_git_commit "$1") || nef_fatal_usage "invalid arg: <sync-commit>"
-    shift
-    [ -z "$1" ] && nef_fatal_usage "missing arg: <ref-prefix>"
-    local _ref_prefix="$1"; shift
-    local _channel="$1"
+    local _argv=()
 
-    # _transform_commit=$(_sync_to_transform_commit $_sync_commit)
-    # [ -z "$_transform_commit" ] && nef_fatal
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help apply; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
 
-    # nef_tr_opt_all=yes
-    # nef_tr_opt_channel_format=shell
-    # nef_tr_command_channels $_sync_commit channels
-    # local _channels="$(nef_tr_command_channels $_transform_commit channels | sed -r 's/^([^=]+)=(.*)$/_zchannels[\1]=\2'/)"
-    # echo commit: $_transform_commit
-    local _channels="$(nef_tr_command_channels $_sync_commit $_channel)"
-    [ -z "$_channels" ] && nef_fatal "no channel retrieved out of sync commit $_sync_commit"
-    # local _channels=$(nef_tr_run_transform_command "$_transform_commit" channels )
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command checkout-refs "missing arg(s)"
+    [ "${#_argv[@]}" -gt 3 ] && nef_fatal_usage_command checkout-refs "too many args"
 
+    _sync_commit=$(_to_git_commit "${_argv[0]}") || nef_fatal_usage_command checkout-refs "invalid arg: <sync-commit>"
+    local _ref_prefix="${_argv[1]}"
+    local _channel="${_argv[2]}"
     if echo "$_ref_prefix" | grep -vq /; then
         _ref_prefix=refs/transform/$_ref_prefix
     fi
+
+    local _channels="$(nef_tr_command_channels $_sync_commit $_channel)"
+    [ -z "$_channels" ] && nef_fatal "no channel retrieved out of sync commit $_sync_commit"
+
+    nef_log "Setting ref $_ref_prefix/SYNC to $_sync_commit"
+    git update-ref $_ref_prefix/SYNC $_sync_commit \
+        || nef_fatal "git update-ref failed with status $?"
     for _ch in $_channels; do
         local name=$(echo $_ch | cut -d= -f1)
         local value=$(echo $_ch | cut -d= -f2)
@@ -188,8 +295,6 @@ nef_tr_command_checkout-refs() {
         git update-ref $ref $value \
             || nef_fatal "git update-ref failed with status $?"
     done
-    # [ -z "$_commit" ] && nef_fatal "container did not return a valid commit"
-    # git update-ref <ref-prefix>/${CHANNEL_NAME}  ${CHANNEL_VALUE}
 }
 
 # command: check-refs <ref-prefix>
@@ -212,22 +317,32 @@ nef_tr_command_check-refs() {
 # to a transform engine implementation that provide enough information
 # to be runned as a Docker container.
 #
-#     <transform-ref> can be a branch name, a commit ID or any other tree-ish thing
+#     <transform-commit> can be a branch name, a commit ID or any other tree-ish thing
 ##
 nef_tr_command_mksync() {
-    [ -z "$1" ] && nef_fatal_usage "missing arg: <transform-commit>"
-    _transform_commit=$(_to_git_commit "$1") \
-        || nef_fatal_usage "invalid arg: <transform-commit>"
-    shift
+    local _argv=()
 
-    local _commit=$(nef_tr_run_transform_command "$_transform_commit" \
-        mksync "$@")
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help mksync; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command mksync "missing arg: <transform-commit>"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command mksync "too many args"
+
+    local _transform_commit=$(_to_git_commit "${_argv[0]}") \
+        || nef_fatal_usage_command mksync "invalid arg: <transform-commit>"
+
+    local _commit=$(nef_tr_run_transform_command "$_transform_commit" mksync)
     [ -z "$_commit" ] && nef_fatal "container did not return a valid commit"
 
     echo $_commit
 }
 
-# command: channels [options] <sync-commit-ref> [<channel-name>]
+# command: channels [--all] [--hash|--name|--shell] <sync-commit-ref> [<channel-name>]
 #
 #     <sync-commit-ref> is a sync commit reference of which channels must be listed
 #
@@ -250,15 +365,17 @@ nef_tr_command_channels() {
             --name) _opt_channel_format=name; shift ;;
             --hash) _opt_channel_format=hash; shift ;;
             --shell) _opt_channel_format=shell; shift ;;
-            -h) nef_tr_command_help channels; shift ;;
+            -h) nef_tr_command_help channels; return ;;
             -*) nef_tr_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
     done
 
-    [ -z "${_argv[0]}" ] && nef_fatal_usage "missing arg: <sync-commit>"
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command channels "missing arg: <sync-commit>"
+    [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command channels "too many args"
+
     GIT_TRANSFORM_CONTAINER_SYNC=$(_to_git_commit "${_argv[0]}") \
-        || nef_fatal_usage "invalid arg: <sync-commit>"
+        || nef_fatal_usage_command channels "invalid arg: <sync-commit>"
     _transform_commit=$(_sync_to_transform_commit $GIT_TRANSFORM_CONTAINER_SYNC)
     _only_channel="${_argv[1]}"
 
@@ -271,15 +388,15 @@ nef_tr_command_channels() {
 
         if [ "$_only_channel" != "" ]; then
             if [ "$_only_channel" = $name ]; then
-                nef_tr_opt_all=yes
+                _opt_all=yes
             else
                 hash=""
-                nef_tr_opt_all=no
+                _opt_all=no
             fi
         fi
-        if [ $nef_tr_opt_all = yes -o -n "$hash" ]; then
+        if [ "$nef_tr_opt_all" = yes -o -n "$hash" ]; then
 
-            case $nef_tr_opt_channel_format in
+            case $_opt_channel_format in
                 name) echo $_channel | sed 's/=.*//' ;;
                 hash) echo $_channel | sed 's/.*=//' ;;
                 shell) echo "$_channel" ;;
@@ -307,22 +424,20 @@ nef_tr_command_apply() {
 
     while [ -n "$1" ]; do
         case "$1" in
-            -h) nef_tr_command_help apply; shift ;;
+            -h) nef_tr_command_help apply; return ;;
             -*) nef_tr_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
     done
 
-    [ -z "${_argv[0]}" ] && nef_fatal_usage "missing arg: <sync-commit>"
+    [ "${#_argv[@]}" -lt 3 ] && nef_fatal_usage_command apply "missing arg(s)"
+    [ "${#_argv[@]}" -gt 3 ] && nef_fatal_usage_command apply "too many args"
+
     GIT_TRANSFORM_CONTAINER_SYNC=$(_to_git_commit "${_argv[0]}") \
-        || nef_fatal_usage "invalid arg: <sync-commit>"
-
-    [ -z "${_argv[1]}" ] && nef_fatal_usage "missing arg: <channel>"
+        || nef_fatal_usage_command apply "invalid arg: <sync-commit>"
     GIT_TRANSFORM_CONTAINER_APPLY_CHANNEL="${_argv[1]}"
-
-    [ -z "${_argv[2]}" ] && nef_fatal_usage "missing arg: <content-commit>"
     GIT_TRANSFORM_CONTAINER_APPLY_COMMIT=$(_to_git_commit "${_argv[2]}") \
-        || nef_fatal_usage "invalid arg: <content-commit>"
+        || nef_fatal_usage_command apply "invalid arg: <content-commit>"
 
     _transform_commit=$(_sync_to_transform_commit $GIT_TRANSFORM_CONTAINER_SYNC)
     [ -z "$_transform_commit" ] && nef_fatal
@@ -333,19 +448,47 @@ nef_tr_command_apply() {
     echo $_commit
 }
 
-nef_tr_command_service() {
-    [ -z "$1" ] && nef_fatal_usage "missing arg: <sync-commit>"
-    GIT_TRANSFORM_CONTAINER_SYNC=$(_to_git_commit "$1") \
-        || nef_fatal_usage "invalid arg: <sync-commit>"
-    shift
+# command: io <sync-commit-ref>
+#
+# Start the transform as a service, as an editor (RW) or viewer (RO) of the data.
+#
+# An HTTP service, for example can provide a website that cause
+# some of the channels to be updated.
+##
+nef_tr_command_io() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help io; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command io "missing arg: <sync-commit>"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command io "too many args"
+
+    GIT_TRANSFORM_CONTAINER_SYNC=$(_to_git_commit "${_argv[0]}") \
+        || nef_fatal_usage_command apply "invalid arg: <sync-commit>"
 
     _transform_commit=$(_sync_to_transform_commit $GIT_TRANSFORM_CONTAINER_SYNC)
     [ -z "$_transform_commit" ] && nef_fatal
 
-    local _commit=$(nef_tr_run_transform_command "$_transform_commit" service "$@")
+    local _commit=$(nef_tr_run_transform_command "$_transform_commit" io)
     [ -z "$_commit" ] && nef_fatal "container did not return a valid commit"
 
     echo $_commit
+}
+
+# TO UPDATE
+nef_tr_command_shell() {
+    [ -z "$1" ] && nef_fatal_usage_command shell "missing arg: <transform-commit>"
+    _transform_commit=$(_to_git_commit "$1") \
+        || nef_fatal_usage_command shell "invalid arg: <transform-commit>"
+    shift
+
+    nef_tr_run_transform_command "$_transform_commit" _shell "$@"
 }
 
 ######################################################################
@@ -494,11 +637,25 @@ _test_cmd_tr()
 _test_echo() {
     nef_log "TEST ECHO:" "$@"
 }
+
+# Command: test
+##
 nef_tr_command_test() {
-    [ -z "$1" ] && nef_fatal_usage "missing arg: <transform-commit>"
-    _transform_commit=$(_to_git_commit "$1") \
-        || nef_fatal_usage "invalid arg: <transform-commit>"
-    shift
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help apply; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command test "missing arg: <transform-commit>"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command test "too many args"
+
+    _transform_commit=$(_to_git_commit "${_argv[0]}") \
+        || nef_fatal_usage_command test "invalid arg: <transform-commit>"
 
     nef_log "RUNNING TESTS on transform $_transform_commit"
 
@@ -569,12 +726,21 @@ nef_tr_command_test() {
 }
 
 nef_tr_command_test_aire() {
-    [ -z "$1" ] && nef_fatal_usage "missing arg: <transform-commit>"
-    _transform_commit=$(_to_git_commit "$1") \
-        || nef_fatal_usage "invalid arg: <transform-commit>"
-    shift
+    local _argv=()
 
-    nef_log "RUNNING TESTS on transform $_transform_commit"
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help apply; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command test "missing arg: <transform-commit>"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command test "too many args"
+
+    _transform_commit=$(_to_git_commit "${_argv[0]}") \
+        || nef_fatal_usage_command test "invalid arg: <transform-commit>"
 
     dir=$(mktemp --directory)
     nef_log "Created temp dir: $dir"
@@ -627,8 +793,13 @@ nef_command_usage() {
     nef_tr_command_help
 }
 
-nef_error_command_usage() {
-    nef_tr_command_help --usage "$1"
+nef_fatal_usage_command() {
+    local _command="$1"; shift
+
+    nef_log "$_command usage error: $*"
+    echo >&2
+    nef_tr_command_help --usage "$_command" >&2
+    exit 1
 }
 
 
