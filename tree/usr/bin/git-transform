@@ -27,7 +27,7 @@ GIT_TRANSFORM_CONTAINER_REPOSITORY=/repository.git
 
 
 ################################################################################
-### TRANSFORM PORCELAIN COMMANDS
+### TRANSFORM PORCELAIN COMMANDS (work with branch/refs)
 
 # command: status [<sync-name> [<channel>]]
 #
@@ -102,6 +102,7 @@ nef_tr_command_add() {
     local _name="${_argv[0]}"
     local _transform_ref="${_argv[1]}"
 
+    nef_log "Creating new sync out of transform '$_transform_ref' ..."
     local _commit="$(nef_tr_command_mksync $_transform_ref)"
     [ -z "$_commit" ] && nef_fatal "mksync did not return a valid commit"
 
@@ -174,6 +175,31 @@ nef_tr_command_push() {
 # le fetch n'a pas de sens (déjà là et les channels sont toujours à jour)
 # équivalent à un merge, mais apporte le batch (sync automatique d'après trackings)
 ##
+
+# command: service <sync-name>
+#
+#
+##
+nef_tr_command_service() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help service; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command io "missing arg: <sync-commit>"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command io "too many args"
+
+    GIT_TRANSFORM_CONTAINER_SYNC=$(_to_git_commit "${_argv[0]}") \
+        || nef_fatal_usage_command apply "invalid arg: <sync-commit>"
+
+    local _commit=$(nef_tr_command_io $GIT_TRANSFORM_CONTAINER_SYNC)
+    [ -z "$_commit" ] && nef_fatal "container did not return a valid commit"
+}
 
 # command: help [command]
 #
@@ -252,7 +278,7 @@ nef_tr_command_help() {
 
 
 ################################################################################
-### TRANSFORM REF COMMANDS
+### TRANSFORM REF HELPERS
 
 # command: checkout-refs  [ --update [--force] [--no-delete] | --create ] [ --force ] <sync-commit-ref> <ref-prefix> [<channel>]
 #
@@ -291,7 +317,7 @@ nef_tr_command_checkout-refs() {
         local name=$(echo $_ch | cut -d= -f1)
         local value=$(echo $_ch | cut -d= -f2)
         local ref=$_ref_prefix/$name
-        nef_log "Setting ref $ref to value $value"
+        nef_log "Setting ref $ref to $value"
         git update-ref $ref $value \
             || nef_fatal "git update-ref failed with status $?"
     done
@@ -309,7 +335,7 @@ nef_tr_command_check-refs() {
 }
 
 ################################################################################
-### TRANSFORM PLUMBING COMMANDS
+### TRANSFORM CONTAINER COMMANDS (fully detached from any branch/ref)
 
 # command: mksync <transform-ref>
 #
@@ -475,20 +501,46 @@ nef_tr_command_io() {
     _transform_commit=$(_sync_to_transform_commit $GIT_TRANSFORM_CONTAINER_SYNC)
     [ -z "$_transform_commit" ] && nef_fatal
 
+    # nef_tr_run_transform_command --interactive "$_transform_commit" io
+    trap _sigint INT
+    trap _sigterm TERM
     local _commit=$(nef_tr_run_transform_command "$_transform_commit" io)
+    nef_log "got: $_commit"
     [ -z "$_commit" ] && nef_fatal "container did not return a valid commit"
-
-    echo $_commit
+}
+_sigint() {
+    echo "Trapped io SIGINT !" >&2
+}
+_sigterm() {
+    echo "Trapped io SIGTERM !" >&2
+    jobs
+    wait
 }
 
-# TO UPDATE
+# command: shell <sync-commit-ref>
+#
+# Start a shell inside the container for given sync-commit's transform.
+##
 nef_tr_command_shell() {
-    [ -z "$1" ] && nef_fatal_usage_command shell "missing arg: <transform-commit>"
-    _transform_commit=$(_to_git_commit "$1") \
-        || nef_fatal_usage_command shell "invalid arg: <transform-commit>"
-    shift
+    local _argv=()
 
-    nef_tr_run_transform_command "$_transform_commit" _shell "$@"
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) nef_tr_command_help io; return ;;
+            -*) nef_tr_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command io "missing arg: <sync-commit>"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command io "too many args"
+
+    GIT_TRANSFORM_CONTAINER_SYNC=$(_to_git_commit "${_argv[0]}") \
+        || nef_fatal_usage_command apply "invalid arg: <sync-commit>"
+    _transform_commit=$(_sync_to_transform_commit $GIT_TRANSFORM_CONTAINER_SYNC)
+    [ -z "$_transform_commit" ] && nef_fatal
+
+    nef_tr_run_transform_command "$_transform_commit" --interactive _shell "$@"
 }
 
 ######################################################################
@@ -534,9 +586,18 @@ _nef_tr_git_checkout_work()
 nef_tr_run_transform_command()
 {
     nef_log --debug "nef_tr_run_transform_command() args:" "$@"
+    local _argv=()
+    local _opt_interactive=no
 
-    local _transform_commit=$1; shift
-    local _command=$1; shift
+    while [ -n "$1" ]; do
+        case "$1" in
+            --interactive) _opt_interactive=yes; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    local _transform_commit="${_argv[0]}"
+    local _command="${_argv[1]}"
     local _last_transform_dir=$(git name-rev --name-only $_transform_commit | sed 's/~.*//')
     [ "$_last_transform_dir" = "" ] && nef_fatal "invalid transform commit: $_transform_commit"
     local _wcpath="${git_transform_work_path}/${_last_transform_dir}"
@@ -560,9 +621,11 @@ nef_tr_run_transform_command()
     dockername=$(echo $_engine | cut -d: -f3)
 
     if test $dockertype = build; then
-        nef_log -v "Building Docker image '${dockername}'"
+        nef_log "Building Docker image '${dockername}'"
+        _quiet=true
+        [ $nef_opt_show_verbose = yes ] && _quiet=false
         sudo \
-            docker.io build --rm=true -t ${dockername} $GIT_TRANSFORM_ENGINE_DIR \
+            docker.io build --rm=true --quiet=$_quiet -t ${dockername} $GIT_TRANSFORM_ENGINE_DIR \
             2>&1 | nef_log_pipe --verbose "docker build:" \
             || nef_fatal "docker build failed"
         nef_log -v "Building done!"
@@ -576,7 +639,7 @@ nef_tr_run_transform_command()
 
     # rm -f log ; touch log
 
-    local _docker_opts
+    local _docker_opts="--sig-proxy=true"
     local docker_v_opts="-v $nef_git_dir:$GIT_TRANSFORM_CONTAINER_REPOSITORY"
     local docker_env_opts=
     for var in $(compgen -v | grep ^GIT_TRANSFORM_CONTAINER_ ); do
@@ -587,20 +650,34 @@ nef_tr_run_transform_command()
     _full_command_path="${GIT_TRANSFORM_CONTAINER_REPOSITORY}/${GIT_TRANSFORM_WORK_DIR}/${_last_transform_dir}/${GIT_TRANSFORM_ENGINE_DIR}/${_command}"
     if [ "$_command" = _shell ]; then
         _full_command_path=/bin/bash
-        _docker_opts="$_docker_opts -t -i" # attach stdin
+        _docker_opts="$_docker_opts -t -i" # attach stdin and pseudo-TTY
+    fi
+    if [ $_opt_interactive = yes ]; then
+        _docker_opts="$_docker_opts -t -i" # attach stdin and pseudo-TTY
+    else
+        _docker_opts="$_docker_opts --attach=stdin --attach=stdout --attach=stderr"
     fi
 
     case "$dockertype" in
         image)
-            nef_log -v "Running Docker image '${dockername}' for command '${_command}'"
-            sudo \
-                docker.io run --rm=true $_docker_opts $docker_v_opts $docker_env_opts $dockername \
-                $_full_command_path "$@" \
-                || nef_fatal "failed running docker image, try --debug"
-            # | sed 's/\r$//' | cat \
-            # the sed expr "\r\n" -> "\n" is because of https://github.com/dotcloud/docker/issues/1755
+            # --rm=true
+            local _cmd=(
+                sudo docker.io run
+                $_docker_opts $docker_v_opts $docker_env_opts
+                $dockername $_full_command_path "$@"
+            )
+            nef_log -v \
+                "Running Docker image '${dockername}' for command '${_command}':" \
+                "${_cmd[@]}"
 
-            # cat log | sed 's/\r$//' | nef_log_pipe --verbose "container log:"
+            trap _signal_sigint SIGINT
+            trap _signal_sigterm SIGTERM
+
+            if test $nef_opt_show_verbose = yes; then
+                "${_cmd[@]}" || nef_fatal "failed running docker image, try --debug-verbose"
+            else
+                "${_cmd[@]}" 2>/dev/null || nef_fatal "failed running docker image, try --debug-verbose"
+            fi
             ;;
         *)
             nef_fatal "$_engine_path: invalid docker type '$dockertype' (must be 'image' or 'container')"
@@ -619,6 +696,12 @@ nef_tr_run_transform_command()
 
 }
 
+_signal_sigint() {
+    nef_log "Trapped SIGINT !"
+}
+_signal_sigterm() {
+    nef_log "Trapped SIGTERM !"
+}
 
 ######################################################################
 # TESTS
