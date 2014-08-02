@@ -79,6 +79,15 @@ nef_tr_command_status() {
     done
 }
 
+# command: git lxc create -n <name> [<transform-ref>] (defaults to "sync" and HEAD)
+# ::
+# lxc-create machin
+# lxc-execute build ...
+# git remote add machin
+#
+
+# command: create [<sync-name> [<transform-ref>]] (defaults to "sync" and HEAD)
+# command: destroy <sync-name>
 # command: add <sync-name> <transform-ref>
 #
 # Initialize a new synchronisation based on the transform tree-ish <transform-ref>.
@@ -581,6 +590,11 @@ _nef_tr_git_checkout_work()
     nef_cmd git reset --hard $_commit
 }
 
+# args: <name>
+nef_tr_create_container()
+{
+    echo
+}
 
 # args: <transform-tree-ish> <command> [args] ...
 nef_tr_run_transform_command()
@@ -639,6 +653,9 @@ nef_tr_run_transform_command()
 
     # rm -f log ; touch log
 
+    rm -f $nef_git_dir/output.fifo
+    mkfifo $nef_git_dir/output.fifo
+
     local _docker_opts="--sig-proxy=true"
     local docker_v_opts="-v $nef_git_dir:$GIT_TRANSFORM_CONTAINER_REPOSITORY"
     local docker_env_opts=
@@ -673,17 +690,30 @@ nef_tr_run_transform_command()
             trap _signal_sigint SIGINT
             trap _signal_sigterm SIGTERM
 
+            # if test $nef_opt_show_verbose = yes; then
+            #     "${_cmd[@]}" || nef_fatal "failed running docker image, try --debug-verbose"
+            # else
+            #     "${_cmd[@]}" 2>/dev/null || nef_fatal "failed running docker image, try --debug-verbose"
+            # fi
+
             if test $nef_opt_show_verbose = yes; then
-                "${_cmd[@]}" || nef_fatal "failed running docker image, try --debug-verbose"
+                "${_cmd[@]}" &
             else
-                "${_cmd[@]}" 2>/dev/null || nef_fatal "failed running docker image, try --debug-verbose"
+                "${_cmd[@]}" 2>/dev/null &
             fi
+            DOCKER_PID=$!
             ;;
         *)
             nef_fatal "$_engine_path: invalid docker type '$dockertype' (must be 'image' or 'container')"
             ;;
     esac
 
+    nef_log "Waiting"
+    wait $DOCKER_PID
+    status=$?
+    [ $status -ne 0 ] && nef_fatal "failed running docker image, try --debug-verbose"
+
+    # wait $DOCKER_PID
     cd ..
 
     if [ "$_last_transform_dir" = "undefined" ]; then
