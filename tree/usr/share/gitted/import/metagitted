@@ -41,6 +41,7 @@ git ls-tree $gitted_new_commit $METAGITTED_CONF_PATH/ | (
                         nef_log "  .. executive branch '$local_init_branch' not present. Ignoring guest."
                     else
                         nef_log "  .. executive branch '$local_init_branch' is $executive_treeish"
+                        nef_log "  .. lxc-create options are: $METAGITTED_GUEST_LXC_CREATE_OPTIONS"
 
                         branches=$(echo "$METAGITTED_GUEST_IMPORT_BRANCHES" | tr ":" " ")
                         refspecs=
@@ -55,7 +56,10 @@ git ls-tree $gitted_new_commit $METAGITTED_CONF_PATH/ | (
                             nef_log "  .. no ref to push"
                         else
                             nef_log "  .. pushing ref specs: $refspecs"
-                            git push "ext::/usr/bin/gitted-client handle-remote-protocol --tree $executive_treeish $METAGITTED_GUEST_NAME %S" $refspecs \
+                            if [ -n "$METAGITTED_GUEST_LXC_CREATE_OPTIONS" ]; then
+                                _opts="--lxc-create-opts $(echo $METAGITTED_GUEST_LXC_CREATE_OPTIONS | sed 's/ /% /g')"
+                            fi
+                            git push "ext::/usr/bin/gitted-client handle-remote-protocol --tree $executive_treeish $_opts $METAGITTED_GUEST_NAME %S" $refspecs \
                                 || nef_fatal "git push failed with status $?"
                         fi
                     fi
