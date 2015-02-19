@@ -19,13 +19,14 @@ curl -L https://github.com/geonef/metagitted.demo/archive/master.tar.gz | tar xz
 
 Then, choose a directory somewhere from where you will administrate the meta-gitted system with git push and pull. There, clone the [metagitted-demo](https://github.com/geonef/metagitted.demo) repository:
 ```
+git clone https://github.com/geonef/sysconf.metagitted.git
 git clone https://github.com/geonef/metagitted.demo.git && cd metagitted.demo
 ```
 
 Then add the remote.
 If it's a directory local to the metagitted system:
 ```
-git remote add alhena "ext::gitted git-remote-command %S"
+git remote add metagitted "ext::gitted git-remote-command %S"
 ```
 
 If it's from outside through SSH (replace ```metagitted.host.net``` with the host name):

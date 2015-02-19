@@ -36,11 +36,13 @@ git ls-tree $gitted_last_commit $METAGITTED_CONF_PATH/ | (
                     if [ -z "$executive_treeish" ]; then
                         nef_log -v "executive branch '$local_init_branch' not present. Ignoring guest."
                     else
-                        state=$(lxc-info -sHn $METAGITTED_GUEST_NAME 2>/dev/null | head -n 1)
-                        if [ -z "$state" ]; then
-                            nef_log -v "LXC container '$METAGITTED_GUEST_NAME' does not exist, not exported"
+                        state=$(lxc-info -sHn "$METAGITTED_GUEST_NAME" 2>/dev/null | head -n 1)
+                        [ -z "$state" ] && state=MISSING
+                        nef_log "  .. state of container '$METAGITTED_GUEST_NAME': $state"
+                        if [ $state != RUNNING ]; then
+                            nef_log "  .. container is not running, skipping guest..."
                         else
-                            nef_log -v "exporting LXC container '$METAGITTED_GUEST_NAME' to Git branch '$local_init_branch'"
+                            nef_log "  .. executive branch '$local_init_branch' is $executive_treeish"
 
                             branches=$(echo "$METAGITTED_GUEST_EXPORT_BRANCHES" | tr ":" " ")
                             refspecs=

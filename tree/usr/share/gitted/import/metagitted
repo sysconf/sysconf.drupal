@@ -18,26 +18,60 @@ git ls-tree $gitted_new_commit $METAGITTED_CONF_PATH/ | (
 
     while read mode type uuid path; do
         file=$(basename $path)
+        if [ $(basename "$file") = "ipv4.forwarding.conf" ]; then
+            nef_log "Updating conf: $path"
+            echo -e "# GENERATED ON $(date -R) by $0 out of blob $uuid [$path] from commit $gitted_new_commit" >/etc/metagitted/ipv4.forwarding.conf
+            git cat-file -p $uuid >>/etc/metagitted/ipv4.forwarding.conf
 
-        if echo "$file" | grep -q '\.guest$'; then
+        elif echo "$file" | grep -q '\.guest$'; then
+
             METAGITTED_GUEST_NAME=$(basename $path .guest)
             (
                 METAGITTED_GUEST_IMPORT_BRANCHES=
                 METAGITTED_GUEST_EXPORT_BRANCHES=
                 METAGITTED_GUEST_INIT_BRANCH=master
+                METAGITTED_GUEST_MISSING_BRANCH=stop # could be: "ignore", "stop", "destroy"
                 declare -A METAGITTED_GUEST_LOCAL
 
                 source <(git cat-file -p $uuid)
 
                 local_init_branch=${METAGITTED_GUEST_LOCAL[$METAGITTED_GUEST_INIT_BRANCH]}
                 if [ -z "$local_init_branch" ]; then
-                    nef_log -v "executive branch '$METAGITTED_GUEST_INIT_BRANCH' not mapped to local branch. Ignoring guest."
+                    nef_log -v "Executive branch '$METAGITTED_GUEST_INIT_BRANCH' not mapped to local branch. Ignoring guest."
                     nef_log -v "   (set METAGITTED_GUEST_LOCAL[$METAGITTED_GUEST_INIT_BRANCH]=<branch-name> in ${path})"
                 else
                     executive_treeish=$(git show-ref --hash "refs/heads/${local_init_branch}")
 
                     if [ -z "$executive_treeish" ]; then
-                        nef_log -v "executive branch '$local_init_branch' not present. Ignoring guest."
+                        state=$(lxc-info -sHn "$METAGITTED_GUEST_NAME" 2>/dev/null | head -n 1)
+                        [ -z "$state" ] && state=MISSING
+
+                        nef_log "Executive branch '$local_init_branch' not present, LXC container '$METAGITTED_GUEST_NAME' is $state and METAGITTED_GUEST_MISSING_BRANCH=$METAGITTED_GUEST_MISSING_BRANCH"
+
+                        case $METAGITTED_GUEST_MISSING_BRANCH in
+                            ignore)
+                                nef_log "  .. ignoring guest."
+                                ;;
+                            stop)
+                                if [ $state = RUNNING ]; then
+                                    nef_log "  .. stopping container $METAGITTED_GUEST_NAME ..."
+                                    lxc-stop -n $METAGITTED_GUEST_NAME
+                                else
+                                    nef_log "  .. nothing to do."
+                                fi
+                                ;;
+                            destroy)
+                                if [ $state != MISSING ]; then
+                                    nef_log "  .. destroying container $METAGITTED_GUEST_NAME ..."
+                                    lxc-destroy -f -n $METAGITTED_GUEST_NAME
+                                else
+                                    nef_log "  .. nothing to do."
+                                fi
+                                ;;
+                            *)
+                                nef_log "  .. bad value \$METAGITTED_GUEST_MISSING_BRANCH: $METAGITTED_GUEST_MISSING_BRANCH"
+                                ;;
+                        esac
                     else
                         nef_log -v "executive branch '$local_init_branch' is $executive_treeish"
                         nef_log -v "lxc-create options are: $METAGITTED_GUEST_LXC_CREATE_OPTIONS"
@@ -69,6 +103,8 @@ git ls-tree $gitted_new_commit $METAGITTED_CONF_PATH/ | (
         fi
     done
 )
+
+/usr/share/metagitted/refresh-guest-status
 
 ################################################################################
 
