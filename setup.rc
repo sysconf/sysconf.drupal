@@ -3,3 +3,6 @@
 . /usr/lib/sysconf.base/common.sh
 
 sysconf_require_packages lxc
+
+# Reload dnsmasq in case /etc/lxc/dnsmasq.hosts has changed
+killall -HUP dnsmasq
