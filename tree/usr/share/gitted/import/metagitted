@@ -20,8 +20,8 @@ git ls-tree $gitted_new_commit $METAGITTED_CONF_PATH/ | (
         file=$(basename $path)
 
         if echo "$file" | grep -q '\.guest$'; then
+            METAGITTED_GUEST_NAME=$(basename $path .guest)
             (
-                METAGITTED_GUEST_NAME=$(basename $path .guest)
                 METAGITTED_GUEST_IMPORT_BRANCHES=
                 METAGITTED_GUEST_EXPORT_BRANCHES=
                 METAGITTED_GUEST_INIT_BRANCH=master
@@ -29,19 +29,18 @@ git ls-tree $gitted_new_commit $METAGITTED_CONF_PATH/ | (
 
                 source <(git cat-file -p $uuid)
 
-                nef_log "Processing guest: $METAGITTED_GUEST_NAME"
                 local_init_branch=${METAGITTED_GUEST_LOCAL[$METAGITTED_GUEST_INIT_BRANCH]}
                 if [ -z "$local_init_branch" ]; then
-                    nef_log "  .. executive branch '$METAGITTED_GUEST_INIT_BRANCH' not mapped to local branch. Ignoring guest."
-                    nef_log "     (set METAGITTED_GUEST_LOCAL[$METAGITTED_GUEST_INIT_BRANCH]=<branch-name> in ${path})"
+                    nef_log -v "executive branch '$METAGITTED_GUEST_INIT_BRANCH' not mapped to local branch. Ignoring guest."
+                    nef_log -v "   (set METAGITTED_GUEST_LOCAL[$METAGITTED_GUEST_INIT_BRANCH]=<branch-name> in ${path})"
                 else
                     executive_treeish=$(git show-ref --hash "refs/heads/${local_init_branch}")
 
                     if [ -z "$executive_treeish" ]; then
-                        nef_log "  .. executive branch '$local_init_branch' not present. Ignoring guest."
+                        nef_log -v "executive branch '$local_init_branch' not present. Ignoring guest."
                     else
-                        nef_log "  .. executive branch '$local_init_branch' is $executive_treeish"
-                        nef_log "  .. lxc-create options are: $METAGITTED_GUEST_LXC_CREATE_OPTIONS"
+                        nef_log -v "executive branch '$local_init_branch' is $executive_treeish"
+                        nef_log -v "lxc-create options are: $METAGITTED_GUEST_LXC_CREATE_OPTIONS"
 
                         branches=$(echo "$METAGITTED_GUEST_IMPORT_BRANCHES" | tr ":" " ")
                         refspecs=
@@ -53,9 +52,9 @@ git ls-tree $gitted_new_commit $METAGITTED_CONF_PATH/ | (
                             fi
                         done
                         if [ -z "$refspecs" ]; then
-                            nef_log "  .. no ref to push"
+                            nef_log "no ref to push"
                         else
-                            nef_log "  .. pushing ref specs: $refspecs"
+                            nef_log "pushing ref specs: $refspecs"
                             if [ -n "$METAGITTED_GUEST_LXC_CREATE_OPTIONS" ]; then
                                 _opts="--lxc-create-opts $(echo $METAGITTED_GUEST_LXC_CREATE_OPTIONS | sed 's/ /% /g')"
                             fi
@@ -64,9 +63,9 @@ git ls-tree $gitted_new_commit $METAGITTED_CONF_PATH/ | (
                         fi
                     fi
                 fi
-            )
+            ) 2>&1 | nef_log_pipe "<$METAGITTED_GUEST_NAME>"
         else
-            nef_log "Ignoring file: $GITTED_DATA_PATH/$file"
+            nef_log -v "Ignoring file: $GITTED_DATA_PATH/$file"
         fi
     done
 )

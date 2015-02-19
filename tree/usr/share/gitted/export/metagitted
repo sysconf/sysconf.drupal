@@ -9,18 +9,16 @@
 #
 . /usr/share/gitted/export.init.bash || exit 2
 
-
 [ -z "$METAGITTED_CONF_PATH" ] && METAGITTED_CONF_PATH=metagitted
 
-echo git ls-tree $gitted_last_commit $METAGITTED_CONF_PATH/
 git ls-tree $gitted_last_commit $METAGITTED_CONF_PATH/ | (
 
     while read mode type uuid path; do
         file=$(basename $path)
 
         if echo "$file" | grep -q '\.guest$'; then
+            METAGITTED_GUEST_NAME=$(basename $path .guest)
             (
-                METAGITTED_GUEST_NAME=$(basename $path .guest)
                 METAGITTED_GUEST_IMPORT_BRANCHES=
                 METAGITTED_GUEST_EXPORT_BRANCHES=
                 METAGITTED_GUEST_INIT_BRANCH=master
@@ -28,22 +26,21 @@ git ls-tree $gitted_last_commit $METAGITTED_CONF_PATH/ | (
 
                 source <(git cat-file -p $uuid)
 
-                nef_log "Processing guest: $METAGITTED_GUEST_NAME"
                 local_init_branch=${METAGITTED_GUEST_LOCAL[$METAGITTED_GUEST_INIT_BRANCH]}
                 if [ -z "$local_init_branch" ]; then
-                    nef_log "  .. executive branch '$METAGITTED_GUEST_INIT_BRANCH' not mapped to local branch. Ignoring guest."
-                    nef_log "     (set METAGITTED_GUEST_LOCAL[$METAGITTED_GUEST_INIT_BRANCH]=<branch-name> in ${path})"
+                    nef_log -v "executive branch '$METAGITTED_GUEST_INIT_BRANCH' not mapped to local branch. Ignoring guest."
+                    nef_log -v "  (set METAGITTED_GUEST_LOCAL[$METAGITTED_GUEST_INIT_BRANCH]=<branch-name> in ${path})"
                 else
                     executive_treeish=$(git show-ref --hash "refs/heads/${local_init_branch}")
 
                     if [ -z "$executive_treeish" ]; then
-                        nef_log "  .. executive branch '$local_init_branch' not present. Ignoring guest."
+                        nef_log -v "executive branch '$local_init_branch' not present. Ignoring guest."
                     else
                         state=$(lxc-info -sHn $METAGITTED_GUEST_NAME 2>/dev/null | head -n 1)
                         if [ -z "$state" ]; then
-                            nef_log "  .. LXC container '$METAGITTED_GUEST_NAME' does not exist, not exported"
+                            nef_log -v "LXC container '$METAGITTED_GUEST_NAME' does not exist, not exported"
                         else
-                            nef_log "  .. exporting LXC container '$METAGITTED_GUEST_NAME' to Git branch '$local_init_branch'"
+                            nef_log -v "exporting LXC container '$METAGITTED_GUEST_NAME' to Git branch '$local_init_branch'"
 
                             branches=$(echo "$METAGITTED_GUEST_EXPORT_BRANCHES" | tr ":" " ")
                             refspecs=
@@ -55,18 +52,18 @@ git ls-tree $gitted_last_commit $METAGITTED_CONF_PATH/ | (
                                 fi
                             done
                             if [ -z "$refspecs" ]; then
-                                nef_log "  .. no ref to fetch"
+                                nef_log -v "no ref to fetch"
                             else
-                                nef_log "  .. pushing ref specs: $refspecs"
+                                nef_log -v "pushing ref specs: $refspecs"
                                 git fetch "ext::/usr/bin/gitted-client handle-remote-protocol --tree $executive_treeish $METAGITTED_GUEST_NAME %S" $refspecs \
                                     || nef_fatal "git fetch failed with status $?"
                             fi
                         fi
                     fi
                 fi
-            )
+            ) 2>&1 | nef_log_pipe "<$METAGITTED_GUEST_NAME>"
         else
-            nef_log "Ignoring file: $GITTED_DATA_PATH/$file"
+            nef_log -v "Ignoring file: $GITTED_DATA_PATH/$file"
         fi
     done
 )
