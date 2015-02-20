@@ -21,6 +21,7 @@ git ls-tree $gitted_new_commit $METAGITTED_CONF_PATH/ | (
         if [ $(basename "$file") = "ipv4.forwarding.conf" ]; then
             nef_log "Updating conf: $path"
             echo -e "# GENERATED ON $(date -R) by $0 out of blob $uuid [$path] from commit $gitted_new_commit" >/etc/metagitted/ipv4.forwarding.conf
+            mkdir -p /etc/metagitted
             git cat-file -p $uuid >>/etc/metagitted/ipv4.forwarding.conf
 
         elif echo "$file" | grep -q '\.guest$'; then
