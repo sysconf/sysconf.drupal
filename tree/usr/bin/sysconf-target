@@ -164,7 +164,7 @@ The file actual/deps is missing or not readable. Are you sure it is a sysconf di
 
                     [ -n "$_output" ] && nef_fatal "Git work dir must be clean from HEAD: $script_init_sysconf_dir
 
-HINT: run 'git status' and commit the changes, or pass --git-ignore-changes"
+HINT: run 'git status' and 'git commit' to save changes, or pass --git-ignore-changes"
                 fi
             fi
         fi
