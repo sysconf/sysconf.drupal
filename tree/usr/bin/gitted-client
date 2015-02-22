@@ -18,25 +18,35 @@
 
 nef_command_name=gitted-client
 nef_command_prefix=script_command
-gitted_executive_treeish=
 
 # Source 'shell-command' from sysconf.base and find sysconf-target
 script_dir=$(dirname $(readlink -f $0))
-PATH=$script_dir/../share/nef-common:$script_dir/../../../../sysconf.base/tree/usr/share/nef-common:/usr/share/nef-common . shell-command
+PATH=$script_dir:$script_dir/../share/nef-common:$script_dir/../../../../sysconf.base/tree/usr/share/nef-common:/usr/share/nef-common . shell-command
 if [ $? -ne 0 ]; then
     echo "FATAL ERROR: could not find share/nef-common/shell-command" >&2
     echo "HINT: keep gitted-client within its sysconf/sysconf.gitted tree (along with sysconf.base)" >&2
     echo "      (symlinking works; sysconf being installed in /usr also works)"
     exit 2
 fi
-sysconf_target_command=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH which sysconf-target)
-[ -z "$sysconf_target_command" ] && nef_fatal "could not find: sysconf-target"
+sysconf_target_script=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH which sysconf-target)
+
+
+######################################################################
+# DEFAULTS
 
 
 ######################################################################
 # COMMANDS: GITTED SERVER
 
-# command: commit [[<target>] <io>...] [-m <message>]
+# command: status [[<target>] <io>]
+#
+# Show status of target IO state
+##
+script_command_status() {
+    true
+}
+
+# command: commit [[<target>] <io>...]       [-m <message>]
 #
 # Commit IO state to Git branch within target
 ##
@@ -44,7 +54,7 @@ script_command_commit() {
     true
 }
 
-# command: reset [[<target>] <io> [commit]] [--soft] [--coming]
+# command: reset  [<target>] <io> [commit]  [--soft] [--coming]
 #
 # Reset target IO state to branch head or given commit
 ##
@@ -52,47 +62,82 @@ script_command_reset() {
     true
 }
 
-# command: status [[<target>] <io>]
-#
-# Show status of target IO state
-##
-script_command_commit() {
-    true
-}
 
 ######################################################################
 # COMMANDS: GIT INTEGRATION
 
-# command: register [git-config-file] [what]
+# command: register [what] [git-config-scope]
 #
-# Setup Git configuration for "git ted" alias and "gitted:" URL rewriting
+# Copy gitted-client to a stable location and configure Git for easy use
 #
-# [git-config-file] designates where the config is written, as given to git-config(1):
+# To ensure gitted-client availability within the scope specified by
+# [git-config-scope], the script is copied to the appropriate location,
+# such as: .git, ~/bin, /usr/bin or another dir as given by --script-dir.
 #
-#       --local         Write to the repository .git/config file.
+# Then, git-config(1) is used to set the "ted" alias and "gitted:" URL scheme.
+#
+# [what] designates what is setup. If not given, all things are setup. These are:
+#
+#       --alias         Configures alias.ted to !(...)/gitted-client
+#       --url           Configures "gitted:" URL rewriting to "ext::(...)gitted-client(...)"
+#
+# [git-config-scope] designates where the config is written, as given to git-config(1):
+#
+#       --local         gitted-client is copied by default to .git
+#                       Config is written to the repository .git/config file.
 #                       This is the default behavior.
 #
-#       --system        Write to system-wide \$(prefix)/etc/gitconfig rather
-#                       than the repository .git/config.
+#       --system        gitted-client is copied by default to ~/bin
+#                       Config is written to system-wide $(prefix)/etc/gitconfig
+#                       rather than the repository .git/config.
 #
-#       --global        Write to global ~/.gitconfig file rather than the
+#       --global        gitted-client is copied by default to /usr/bin
+#                       Write to global ~/.gitconfig file rather than the
 #                       repository .git/config.
 #
 #       --file config-file, -f config-file
 #                       Use the given config file instead of the one specified
 #                       by GIT_CONFIG
 #
-# [what] designates what is setup. If not given, all things are setup. These are:
+# Available options:
 #
-#       --alias         Configures alias.ted to !(...)/gitted-client
-#       --url           Configures gitted: URL rewriting to ext::(...)gitted-client(...)
+#   --no-copy                   Do not copy the script, use the current location instead
+#                               (even if not appropriate)
+#   --script-dir <dir>          Path to directory where gitted-client is copied
+#   --force                     Overwrite existing copy of gitted-client
+#   --alias-name <name>         Name of command alias to gitted-client (see --alias)
+#   --url-scheme <scheme>       Register a URL scheme other than default "gitted" (see --url)
 ##
 script_command_register() {
     local _argv=()
+    local _config=local
+    local _config_file=
+    local _no_copy=no
+    local _force=no
+    local _script_dir=
+    local _enable_all=yes
+    local _enable_alias=no
+    local _enable_url=no
+    local _alias_name=ted
+    local _url_scheme=gitted
 
     while [ -n "$1" ]; do
         case "$1" in
-            -h|--help) script_command_help init; return ;;
+            --local) _config=local; shift ;;
+            --system) _config=system; shift ;;
+            --global) _config=global; shift ;;
+            -f|--file) _config=file; _config_file="$2"; shift 2 ;;
+
+            --no-copy) _no_copy=yes; shift ;;
+            --script-dir) _script_dir="$2"; shift 2 ;;
+            --force) _force=yes; shift ;;
+
+            --alias) _enable_alias=yes; _enable_all=no; shift ;;
+            --url) _enable_url=yes; _enable_all=no; shift ;;
+            --alias-name) _alias_name="$2"; shift 2 ;;
+            --url-scheme) _url_scheme="$2"; shift 2 ;;
+
+            -h|--help) script_command_help register; return ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
@@ -100,18 +145,79 @@ script_command_register() {
 
     [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command init "too many arguments"
 
-    script_check_env
-    nef_log "Copying $0 to GIT dir..."
-    script_ensure_script_in_git_dir
-}
-script_ensure_script_in_git_dir() {
-    cp $0 $script_git_dir/$nef_command_name \
-        || nef_fatal "could not copy $0 to $script_git_dir/$nef_command_name"
-    commit=$(git rev-parse HEAD)
-    sed -i -r "s/^(script_executive_treeish)=(.*)/\1=$commit/" $script_git_dir/$nef_command_name
-    # cp $(dirname $0)/gitted-server-setup $script_git_dir/
-}
+    # Copy the script
+    if [ $_no_copy = yes ]; then
+        [ -n "$_script_dir" ] \
+            && nef_fatal "--script-dir is not compatible with --no-copy"
+    elif [ -z "$_script_dir" ]; then
+        case $_config in
+            local) _script_dir=$(git rev-parse --git-dir)
+                [ -d $_script_dir ] || nef_fatal "not in a Git repository
 
+HINT: change to a Git directory or use --system, --global, --file or --no-copy" ;;
+
+            system) _script_dir=~/bin ;;
+            global) _script_dir=/usr/bin ;;
+            file) nef_fatal "--file requires --script-dir or --no-copy" ;;
+        esac
+    fi
+    local _source_script=$(readlink -f $0)
+    mkdir -p "$_script_dir" || nef_fatal "could not mkdir directory: $_script_dir"
+
+    if [ -r $_script_dir/$nef_command_name ]; then
+
+        diff -q $_script_dir/$nef_command_name $_source_script >/dev/null
+        if [ $? -ne 0 ]; then
+            if [ $_force = no ]; then
+                if [ $nef_opt_show_verbose = yes ]; then
+                    nef_log "Differences that would be applied with --force:"
+                    diff -U1 $_script_dir/$nef_command_name $_source_script >&2
+                else
+                    local _diff_hint="
+      (run with --verbose (or -v) to get a diff)"
+                fi
+                nef_fatal "Script exists already with different content in: $_script_dir
+
+HINT: give --force to overwrite, specify --file or run the right $nef_command_name.$_diff_hint"
+            else
+                nef_log "Forcing overwrite with new content on target: $_script_dir/$nef_command_name"
+            fi
+        fi
+    fi
+    nef_log "Copy '$_source_script' to $_script_dir ..."
+    cp $_source_script $_script_dir/
+    cp "$sysconf_target_script" $_script_dir
+    cp "$lib_shell_command_path" $_script_dir
+
+    # Setup Git config
+    _git_config_cmd() {
+        nef_log "Running: git config --$_config $_config_file $@"
+        git config "--$_config" $_config_file "$@" \
+            || nef_fatal "git-config(1) failed with status: $?"
+    }
+
+    if [ $_enable_alias = yes -o $_enable_all = yes ]; then
+        local _dir_spec=$_script_dir
+        [ $_config = local ] && _dir_spec='$(git rev-parse --git-dir)'
+        # "${_git_config_cmd[@]}"
+pwd
+        # git config "--$_config" $_config_file \
+            # "alias.${_alias_name}" lala #"!${_dir_spec}/${nef_command_name}"
+        _git_config_cmd "alias.${_alias_name}" "!${_dir_spec}/${nef_command_name}"
+        # "${_git_config_cmd[@]}" alias.gitted = ! /$nef_command_name
+    fi
+
+    if [ $_enable_url = yes -o $_enable_all = yes ]; then
+        local _dir_spec=$_script_dir
+        if [ $_config = local ]; then
+            # local $_dir="$PWD"
+            cd $(git rev-parse --show-toplevel)
+            local _dir_spec=$(git rev-parse --git-dir)
+            # cd "$_dir"
+        fi
+        _git_config_cmd "url.ext::${_dir_spec}/gitted-client %S .insteadOf" "${_url_scheme}:"
+    fi
+}
 
 # command: git-upload-pack <target>
 #
@@ -149,7 +255,7 @@ script_command_git-upload-pack() {
 
     local _target="${_argv[0]}"
 
-    nef_log "target = $_target"
+    script_target_exec "$_target" gitted git-upload-pack
 }
 
 # command: git-receive-pack <target>
@@ -187,7 +293,7 @@ script_command_git-receive-pack() {
 
     local _target="${_argv[0]}"
 
-    nef_log "target = $_target"
+    script_target_exec "$_target" gitted git-receive-pack
 }
 
 
@@ -220,12 +326,29 @@ script_command_help() {
 ######################################################################
 # FUNCTIONALITY
 
+script_target_exec() {
+    local _target="$1"
+    shift
 
+    nef_log -v "Attaching to sysconf-target '$_target': $@"
+
+    # PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH \
+    #     exec sysconf-target attach $_target -- "$@"
+
+    exec "$sysconf_target_script" attach $_target -- "$@"
+
+    nef_fatal "sysconf-target failed with status: $?"
+}
 
 
 ######################################################################
 # COMMAND LINE & RUN
 
+# common options:
+#   -v, --verbose               Enable verbose logging on stderr
+#   -vv, --debug-verbose        Enable debug-level verbosity (implies -v)
+#   -h, --help                  Show help for main usage or specific command
+##
 script_eval_common_option() {
     case "$1" in
         -v | --verbose) nef_opt_show_verbose=yes; shift ;;
@@ -269,12 +392,13 @@ script_parse_cmdline() {
     [ -z "$script_git_dir" ] && nef_fatal "not in GIT directory or working tree"
 
     # Run command
-    script_command_function_name="script_command_${script_command_argv[0]}"
+    script_command_name="${script_command_argv[0]}"
     unset script_command_argv[0]
+    script_command_function_name="${nef_command_prefix}_${script_command_name}"
     declare -f $script_command_function_name >/dev/null \
-        || nef_fatal_usage "invalid command: ${script_command_argv[0]}"
+        || nef_fatal_usage "invalid command: $script_command_name"
     $script_command_function_name "${script_command_argv[@]}" \
-        || nef_fatal "command ${script_command_argv[0]} failed with status $?"
+        || nef_fatal "command ${script_command_name} failed with status $?"
     nef_log -v "Command returned successfully."
 }
 
