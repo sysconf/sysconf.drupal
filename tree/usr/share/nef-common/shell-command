@@ -213,36 +213,47 @@ nef_command_merge_env() {
 #
 nef_show_help() {
     local _command="$1"
-    local _keep_showing=0
+    local _keep_showing=no
     local _prefix1="usage: $nef_command_callname"
     local _prefix2=$(echo "$_prefix1" | sed "s/./ /g")
+    local _had_command=no
+    local _category=
+    local _ignore_blank=no
 
     if test -z "$_command"; then
-        cmd_description=$(cat $(which "$0") | head -n 3 | tail -n 1 | sed -r 's/[^-]*- ?//')
-        cat <<-EOF
-	$nef_command_callname - $cmd_description
+        _keep_showing=yes
+        _ignore_blank=yes
+        # cmd_description=$(cat $(which "$0") | head -n 3 | tail -n 1 | sed -r 's/[^-]*- ?//')
+        # cat <<-EOF
+	# $nef_command_callname - $cmd_description
 
-	$_prefix1 [--verbose] [--debug-verbose] [--help]
-	$_prefix2 <command> [<args>]
+	# $_prefix1 <command> [options]
 
-	EOF
+	# EOF
     fi
-    grep -E ^# "$(which "$0")" | sed -r 's/^# ?//' | (
+    grep -E '^#([^!]|$)' "$(which "$0")" | sed -r 's/^# ?//' | (
         while read; do
             local _line="$REPLY"
             local _command_name=
 
-            if [ "$_keep_showing" -ne 0 ]; then
+            if [ "$_keep_showing" = yes ]; then
                 if [[ "$_line" =~ ^# ]]; then
+                    _keep_showing=no
                     if [ -n "$_command" -a "$_command" != _common ]; then
+                        # if [ -n "$_category" ]; then
+                        #     echo
+                        #     echo "(this command is a $_category COMMAND)"
+                        # fi
                         _command=_common
-                        _keep_showing=0
                         continue
                     else
-                        break
+                        [ -n "$_command" ] && break
                     fi
                 else
-                    echo "$_line"
+                    if [ -n "$_line" -o $_ignore_blank = no ]; then
+                        echo "$_line"
+                        _ignore_blank=no
+                    fi
                     continue
                 fi
             fi
@@ -251,19 +262,36 @@ nef_show_help() {
                     echo
                     echo "Common options:"
                     echo
-                    _keep_showing=1
+                    _keep_showing=yes
                 fi
+            elif [[ "$_line" =~ ^COMMANDS: ]]; then
+                _category=$(echo "$_line" | sed -r 's/^COMMANDS: *(.*)/\1/')
+                if [ -z "$_command" ]; then
+                    [ $_had_command = yes ] && echo
+                    echo "${_category} COMMANDS"
+                    echo
+                fi
+                _had_command=no
+
             elif [[ "$_line" =~ ^command: ]]; then
-                _command_name=$(echo "$_line" | sed -r 's/^command: ([^ ]+) .*/\1/')
-                _command_args=$(echo "$_line" | sed -r 's/^command: [^ ]+ +(.*)/\1/')
+                _command_name=$(echo "$_line" | sed -r 's/^command: ([^ ]+) ?.*/\1/')
+                _command_args=$(echo "$_line" | sed -r 's/^command: [^ ]+ ?(.*)/\1/')
 
                 if [ -n "$_command" ]; then
                     if [ "$_command" = "$_command_name" ]; then
                         echo "usage: $nef_command_callname $_command $_command_args"
-                        [ $_usage -eq 0 ] && _keep_showing=1
+                        if [ $_usage -eq 0 ]; then
+                            _keep_showing=yes
+                            _ignore_blank=yes
+                            echo
+                            if [ -n "$_category" ]; then
+                                echo "$_category COMMAND:"
+                            fi
+                        fi
                     fi
                 else
                     echo -e "    $_command_name\t$_command_args"
+                    _had_command=yes
                 fi
             fi
 

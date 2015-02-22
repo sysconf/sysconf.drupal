@@ -2,20 +2,23 @@
 #
 # SYSCONF-target tool -- create/attach  a target (such as machine/remote hosts)
 #
-# There are 2 main commands: 'init' and 'attach'. Examples:
-#     sysconf-target init lxc:mycontainer /sysconf
-#     sysconf-target init ssh:root@myhost /custom/local/sysconf/path
+# Different drivers are supported, such as "lxc" and "ssh" (see the "drivers" command).
+#
+# EXAMPLES
+#     sysconf-target init   lxc:mycontainer /sysconf
+#     sysconf-target init   ssh:root@myhost /custom/local/sysconf/path
 #     sysconf-target attach lxc:mycontainer /bin/echo something
-#     sysconf-target attach ssh:myhost service xyz reload
+#     sysconf-target attach ssh:myhost      service xyz reload
 #
-# Different drivers are supported, such as "lxc" and "ssh".
-#
-#
+##
 
 nef_command_name=sysconf-target
 nef_command_prefix=script_command
 
-. $(dirname $0)/../share/nef-common/shell-command || exit 2
+# Source 'shell-command' from sysconf.base, from any available location
+script_dir=$(dirname $(readlink -f $0))
+PATH=$script_dir/../share/nef-common:/usr/share/nef-common \
+    . shell-command || exit 2
 
 
 ######################################################################
@@ -26,7 +29,7 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 
 
 ######################################################################
-# COMMANDS
+# COMMANDS:
 
 
 # command: init <target> <sysconf-dir>
@@ -760,7 +763,7 @@ script_parse_cmdline() {
     declare -f $script_command_function_name >/dev/null \
         || nef_fatal_usage "invalid command: ${script_command_argv[0]}"
     $script_command_function_name "${script_command_argv[@]}" \
-        || nef_fatal "command ${script_command_argv[0]} returned status $?"
+        || nef_fatal "command ${script_command_argv[0]} failed with status $?"
     nef_log -v "Command returned successfully."
 }
 
