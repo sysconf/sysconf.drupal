@@ -397,7 +397,6 @@ script_command_status() {
 #
 #   --raw       Print a raw simple list of formats, each on its line (for scripts)
 #               (incompatible with -v/--verbose)
-#
 ##
 script_command_drivers() {
     local _argv=()

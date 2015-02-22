@@ -248,6 +248,7 @@ nef_show_help() {
             fi
             if [[ "$_line" =~ ^common\ options: ]]; then
                 if [ "$_command" = _common ]; then
+                    echo
                     echo "Common options:"
                     echo
                     _keep_showing=1
