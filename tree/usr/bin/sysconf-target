@@ -247,12 +247,14 @@ HINT: provide --force to overwrite"
     nef_log "Done."
 }
 
-# command: attach <target> [--] [command [<args>]]
+# command: attach <target> { -c <shell code> | [-- command [<args>]]] }
 #
 # Start target if needed and run the given command inside
 #
 # Options can be given at any position:
 #
+#   -c                  Code to run in a shell (like sh -c, see sh(1))
+#                       (instead of a "physical" command)
 #   --no-start          Don't start a stopped machine
 #   --no-unfreeze       Don't unfreeze a frozen machine
 ##
@@ -260,29 +262,44 @@ script_command_attach() {
     script_attach_nostart=no
     script_attach_nounfreeze=no
     local _argv=()
+    local _options=()
     local _command=
     local _usage=0
     local _argv=()
+    local _shell_code=
 
     while [ -n "$1" ]; do
         case "$1" in
-            -h) script_command_help attach; return ;;
+            -c) _shell_code="$2"; shift 2 ;;
             --no-start) shift; script_attach_nostart=yes ;;
             --no-unfreeze) shift; script_attach_nounfreeze=yes ;;
             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            -h) script_command_help attach; return ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
     done
 
-    [ "${#_argv[@]}" -lt 2 ] && nef_fatal_usage_command attach "missing argument"
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command attach "missing argument"
 
     target_load "${_argv[0]}"
     unset _argv[0]
-    if [ "${_argv[0]}" = -- ]; then
-        unset _argv[0]
+
+    if [ -n "$_shell_code" ]; then
+        [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command attach \
+            "-c options accept only one arg (see --help for usage info)"
+        _options=("${_options[@]}" -c "$_shell_code")
+    else
+        if [ "${_argv[0]}" = -- ]; then
+            unset _argv[0]
+        fi
+        if [ "${#_argv[@]}" -eq 0 ]; then
+            _argv=(/bin/sh)
+        fi
     fi
-    driver_${current_driver}_exec "${_argv[@]}"
+    nef_log -d "Exec options: ${_options[@]}"
+    nef_log -d "Exec argv: ${_argv[@]}"
+    driver_${current_driver}_exec "${_options[@]}" "${_argv[@]}"
 }
 
 # command: status <target> [--driver] [--system] [--sysconf]
@@ -372,44 +389,28 @@ script_command_status() {
     fi
 }
 
-# # command: scan
-# #
-# # Dump a list of detected targets
-# ##
-# script_command_scan() {
-#     local _argv=()
-#     local _command=
-#     local _usage=0
-#     local _argv=()
-
-#     while [ -n "$1" ]; do
-#         case "$1" in
-#             -h) script_command_help help; return ;;
-#             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
-#             -*) script_eval_common_option "$1"; shift ;;
-#             *) _argv=("${_argv[@]}" "$1"); shift ;;
-#         esac
-#     done
-
-#     [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command handle-remote-protocol "too many arguments"
-
-#     script_foreach_config script_list_config "${_argv[@]}"
-# }
-
-# command: drivers [-v]
+# command: drivers [-v | --raw]
 #
 # Dump a list of supported target drivers
+#
+# Enable verbose (-v or --verbose) to get driver-specific options and variables.
+#
+#   --raw       Print a raw simple list of formats, each on its line (for scripts)
+#               (incompatible with -v/--verbose)
+#
 ##
 script_command_drivers() {
     local _argv=()
     local _command=
     local _usage=0
+    local _raw=no
     local _argv=()
 
     while [ -n "$1" ]; do
         case "$1" in
-            -h) script_command_help drivers; return ;;
+            --raw) _raw=yes; shift ;;
             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            -h) script_command_help drivers; return ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
@@ -419,9 +420,31 @@ script_command_drivers() {
 
     NEF_LOG_NO_PREFIX=yes
 
-    nef_log "Available drivers for sysconf targets:"
-    nef_log "  ssh"
-    nef_log "  lxc"
+    if [ $_raw = yes ]; then
+         [ $nef_opt_show_verbose = yes ] \
+             && nef_fatal_usage_command drivers "--raw is compatible with -v"
+    else
+        if [ $nef_opt_show_verbose != yes ]; then
+            nef_log "(specify -v to see what options are available for each driver)"
+            nef_log
+        fi
+    fi
+
+    nef_log -v "Available drivers for sysconf targets:"
+    nef_log -v
+
+    local _prefix=
+    if [ $_raw != yes ]; then
+        _prefix="Driver: "
+    fi
+    echo "${_prefix}ssh"
+    nef_log -v "  GIT_SSH_COMMAND"
+    nef_log -v "    environment variable  can be set to override the SSH command"
+    nef_log -v "    (and optional arguments). Example:"
+    nef_log -v "    $ GIT_SSH_COMMAND='ssh -i git_id' sysconf-target status ssh:user@host"
+    nef_log -v
+    echo "${_prefix}lxc"
+    nef_log -v
 }
 
 # command: help [command]
@@ -472,6 +495,10 @@ Hint: to print a list of available drivers, run: $0 drivers"
 
 driver_ssh_load() {
     driver_ssh_userhost=$current_target_id
+
+    if [ -z "$GIT_SSH_COMMAND" ]; then
+        GIT_SSH_COMMAND=ssh
+    fi
 }
 driver_ssh_status() {
     ssh -v $driver_ssh_userhost -- true 2>&1 | grep -E "auth|Auth|key|version"
@@ -686,8 +713,13 @@ driver_lxc_refresh_state() {
 
 
 ######################################################################
-# COMMAND LINE & RUN
+# MAIN COMMAND LINE & RUN
 
+# common options:
+#   -v, --verbose               Enable verbose logging on stderr
+#   -vv, --debug-verbose        Enable debug-level verbosity (implies -v)
+#   -h, --help                  Show help for main usage or specific command
+##
 script_eval_common_option() {
     case "$1" in
         -v | --verbose) nef_opt_show_verbose=yes; shift ;;
