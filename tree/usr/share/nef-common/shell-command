@@ -51,6 +51,7 @@ nef_log() {
             -p | --prepend) _opt_prepend="$2"; shift; shift ;;
             -v | --verbose) _opt_verbose=yes; shift ;;
             -d | --debug) _opt_debug=yes; shift ;;
+            --) shift; break ;;
             -*) nef_log "nef_log(): bad option: $1"; shift ;;
             *) break ;;
         esac
@@ -177,6 +178,9 @@ nef_fatal_usage() {
 
 nef_show_usage() {
     local _usage_command=${nef_command_prefix}_usage
+
+    [ "$(type -t $_usage_command)" = "function" ] \
+        || _usage_command=${nef_command_prefix}_help
 
     [ "$(type -t $_usage_command)" = "function" ] \
         || nef_fatal "function '$_usage_command' not defined by script $0"

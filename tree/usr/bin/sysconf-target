@@ -1,0 +1,738 @@
+#!/bin/bash
+#
+# SYSCONF-target tool -- create/attach  a target (such as machine/remote hosts)
+#
+# There are 2 main commands: 'init' and 'attach'. Examples:
+#     sysconf-target init lxc:mycontainer /sysconf
+#     sysconf-target init ssh:root@myhost /custom/local/sysconf/path
+#     sysconf-target attach lxc:mycontainer /bin/echo something
+#     sysconf-target attach ssh:myhost service xyz reload
+#
+# Different drivers are supported, such as "lxc" and "ssh".
+#
+#
+
+nef_command_name=sysconf-target
+nef_command_prefix=script_command
+
+. $(dirname $0)/../share/nef-common/shell-command || exit 2
+
+
+######################################################################
+# DEFAULTS
+
+SYSCONF_TARGET_LIB_PREFIX=/usr/lib/sysconf/sysconf-target-
+SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
+
+
+######################################################################
+# COMMANDS
+
+
+# command: init <target> <sysconf-dir>
+#
+# Initialise <target> from <sysconf-dir>
+#
+#   <target>            Target spec in the form of "driver:name"
+#       To get the list of available drivers, run the "dump-drivers" command.
+#       More information about this on root help.
+#
+#   <sysconf-dir>       Local sysconf directory to initialize on target
+#       tar(1) is used to copy <sysconf-dir> to the target.
+#
+#       If Git is available and <sysconf-dir> is a Git working dir,
+#       the GIT SPECIAL BEHAVIOR is enabled unless --no-git is given.
+#
+#       Instead of "tar c | attach tar x"'ing, what happens is:
+#         1. if <sysconf-dir> differs from HEAD, show fatal error
+#            unless --git-ignore-changes is given
+#         2. a clone is made with the single branch
+#         3. tar(1) is used to send it (with the .git and everything inside)
+#
+# Options can be given at any position:
+#
+#   --force                             Overwrite existing /sysconf on target
+#
+#   --no-copy                           Do not copy/fix sysconf
+#
+#   --no-setup                          Do not setup sysconf, just copy it
+#
+#   --no-git                            Disable the GIT SPECIAL BEHAVIOR
+#       If <sysconf-dir> is the working dir of a Git repository,
+#       <sysconf-dir> will be treated as a normal flat repository
+#       instead of copying the whole Git history to the target.
+#
+#   --git-ignore-changes                Keep using Git HEAD when dir or index is dirty.
+#
+#   --git-target-branch <name>          Set HEAD branch name on target /sysconf
+#       Default is "master".
+#
+#   --distrib <name>[:<release>[:<arch>]]
+#
+#       Override distribution spec from <sysconf-dir>/type.
+#
+#       It is managed by the driver in its own specific ways
+#       which can include caching at different levels.
+#
+#         Driver "ssh": N/A
+#         Driver "lxc": arg is parsed and given to lxc-create like:
+#                       -t download -- -d <distrib> -r <release> -a <arch>
+#        Examples:
+#          --distrib debian:wheezy:amd64
+#          --distrib ubuntu:precise             (arch is guessed from 'uname')
+#          --distrib debian                     ('wheezy' is default for 'debian')
+#
+#   --custom <comma-separated>          Apply custom settings to target
+#      (multiple keys can be given separated with commas,
+#       the --custom option can appear multiple times as well)
+#
+#      Valid keys for --custom:
+#
+#        "ssh-pubkey"   SSH public key of the running user is copied
+#                       to ~root/.ssh/authorized_keys inside target
+#
+#        "git-user"     Git config settings user.name and user.email are copied
+#                       into ~root/.gitconfig inside target
+#
+#   --lxc-create-opts '<options>'       Pass <options> as arguments to lxc-create
+#
+#        Example:  --lxc-create-opts "-B lvm --vgname vgname1 --fssize 4G"
+##
+script_command_init() {
+    local _argv=()
+    local _command=
+    local _no_copy=no
+    local _no_setup=no
+    local _no_git=no
+    local _git_ignore_changes=no
+    local _git_target_branch=master
+    local _force=no
+    local _custom=
+    script_init_distrib=
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            --force) _force=yes; shift ;;
+            --no-copy) _no_copy=yes; shift ;;
+            --no-setup) _no_setup=yes; shift ;;
+            --no-git) _no_git=yes; shift ;;
+            --git-ignore-changes) _git_ignore_changes=yes; shift ;;
+            --git-target-branch) _git_target_branch=$2; shift 2 ;;
+            --distrib) script_init_distrib="$2"; shift 2 ;;
+            --custom) _custom="$_custom $2"; shift 2 ;;
+            --lxc-create-opts) shift; driver_lxc_create_opts="$1"; shift ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            -h) script_command_help init; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 2 ] && nef_fatal_usage_command init "missing argument"
+    [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command init "too many arguments"
+
+    target_load "${_argv[0]}"
+    script_init_sysconf_dir="${_argv[1]}"
+
+    # Check if sysconf dir is valid
+    cd "$script_init_sysconf_dir" \
+        || nef_fatal "could not change to directory: $script_init_sysconf_dir"
+    [ -r deps ] && nef_fatal "file './deps' should not be present
+The directory must CONTAIN sysconf profiles, it must not be a profile itself"
+    [ ! -r actual/deps ] && nef_fatal "invalid sysconf dir: $script_init_sysconf_dir
+The file actual/deps is missing or not readable. Are you sure it is a sysconf directory?"
+
+    # Check if Git mode
+    local _git_mode=no
+
+    if [ $_no_git = no -a -n "$(which git)" ]; then
+        # check if git
+        if git rev-parse --git-dir >/dev/null 2>&1; then
+            # Git repository found but sysconf dir may not be at its wd root
+            local _wdprefix=$(git rev-parse --show-prefix 2>/dev/null)
+
+            if [ -z "$_wdprefix" ]; then
+
+                local _git_mode=yes
+                nef_log "Git-mode transfer ENABLED, repository: $(git rev-parse --git-dir)"
+                # local _git_dir=$(git rev-parse --git-dir)
+                local _git_toplevel=$(git rev-parse --show-toplevel)
+
+                if [ $_git_ignore_changes = no ]; then
+                    local _output=$(git status --porcelain)
+                    [ $? -eq 0 ] || nef_fatal "git-status failed from directory: $script_init_sysconf_dir"
+
+                    [ -n "$_output" ] && nef_fatal "Git work dir must be clean from HEAD: $script_init_sysconf_dir
+
+HINT: run 'git status' and commit the changes, or pass --git-ignore-changes"
+                fi
+            fi
+        fi
+    fi
+
+    # Fix distrib
+    if [ -z "$script_init_distrib" ]; then
+        script_init_distrib=$(cat "$script_init_sysconf_dir/type" 2>/dev/null | head -n 1 | tr ' ' :)
+    fi
+    if [ -z "$script_init_distrib" ]; then
+        nef_log -v "Sysconf does not define distribution, using default '$SYSCONF_TARGET_DEFAULT_DISTRIB'"
+        script_init_distrib=$SYSCONF_TARGET_DEFAULT_DISTRIB
+    fi
+
+    driver_${current_driver}_create
+
+    # Copy SSH public key (--custom ssh-pubkey)
+    if echo $_custom | grep -Eq "(^|,)ssh-pubkey($|,)"; then
+        if [ -f ~/.ssh/id_dsa.pub ]; then
+            nef_log "copy ~/.ssh/id_dsa.pub to ${current_target}:/root/.ssh/authorized_keys"
+            cat ~/.ssh/id_dsa.pub | driver_${current_driver}_exec \
+                -c 'mkdir -p /root/.ssh && cat >>/root/.ssh/authorized_keys'
+        fi
+    fi
+
+    # Set GIT config for user.name and user.email (--custom git-user)
+    if echo $_custom | grep -Eq "(^|,)git-user($|,)"; then
+        local _git_user_name=$(git config --get user.name)
+        local _git_user_email=$(git config --get user.email)
+        if [ -n "$_git_user_name" -a -n "$_git_user_name" ]; then
+            nef_log "set target Git username to '$_git_user_name' and email to '$_git_user_email'"
+            cat <<EOF | driver_${current_driver}_exec -c "cat >>/root/.gitconfig"
+[user]
+	name = ${_git_user_name}
+	email = ${_git_user_email}
+EOF
+        fi
+    fi
+
+    # Check sysconf on target
+    if [ $_force = no ]; then
+        (driver_${current_driver}_exec -c "test -d /sysconf") \
+            && nef_fatal "/sysconf exists already on target: $current_target
+
+HINT: provide --force to overwrite"
+    fi
+
+    # Install sysconf
+    if [ "$_no_copy" = no ]; then
+        if [ $_git_mode = yes ]; then
+            nef_log "Preparing Git commit from Sysconf repo: $_git_toplevel"
+            _rm_dir_former=$PWD
+            cd $(mktemp -d)
+            nef_log -v "making clone: $PWD"
+            git init . 2>&1 | nef_log_pipe -v git-fetch: \
+                || nef_fatal "git-init failed with status $?"
+            git fetch "$_git_toplevel" HEAD 2>&1 | nef_log_pipe -v git-fetch: \
+                || nef_fatal "git-fetch failed with status $?"
+            git checkout -b $_git_target_branch FETCH_HEAD 2>/dev/null \
+                || nef_fatal "git-checkout failed with status $?"
+            _to_rm=$PWD
+        else
+            nef_log "Copying flat sysconf directory: $PWD"
+        fi
+
+        nef_log "Sending Sysconf data to target..."
+        tar c . | driver_${current_driver}_exec \
+            -c "mkdir -p /sysconf && tar x -C /sysconf --no-same-owner --no-same-permissions"
+
+        if [ -n "$_to_rm" ]; then
+            cd $_rm_dir_former
+            rm -rf "$_to_rm"
+        fi
+
+        if [ "$_no_setup" = no ]; then
+            nef_log "Setting up sysconf in target..."
+            (driver_${current_driver}_exec /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update)
+        fi
+    fi
+    nef_log "Done."
+}
+
+# command: attach <target> [--] [command [<args>]]
+#
+# Start target if needed and run the given command inside
+#
+# Options can be given at any position:
+#
+#   --no-start          Don't start a stopped machine
+#   --no-unfreeze       Don't unfreeze a frozen machine
+##
+script_command_attach() {
+    script_attach_nostart=no
+    script_attach_nounfreeze=no
+    local _argv=()
+    local _command=
+    local _usage=0
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) script_command_help attach; return ;;
+            --no-start) shift; script_attach_nostart=yes ;;
+            --no-unfreeze) shift; script_attach_nounfreeze=yes ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 2 ] && nef_fatal_usage_command attach "missing argument"
+
+    target_load "${_argv[0]}"
+    unset _argv[0]
+    if [ "${_argv[0]}" = -- ]; then
+        unset _argv[0]
+    fi
+    driver_${current_driver}_exec "${_argv[@]}"
+}
+
+# command: status <target> [--driver] [--system] [--sysconf]
+#
+# Show the status of given target
+#
+#   --driver    Show (only) target driver information
+#   --system    Show (only) target system informatioo
+#   --sysconf   Show (only) target sysconf information
+##
+script_command_status() {
+    local _argv=()
+    local _command=
+    local _usage=0
+    local _info_all=yes
+    local _info_driver=no
+    local _info_system=no
+    local _info_sysconf=no
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            --driver) _info_driver=yes; _info_all=no; shift ;;
+            --system) _info_system=yes; _info_all=no; shift ;;
+            --sysconf) _info_sysconf=yes; _info_all=no; shift ;;
+            -h) script_command_help status; return ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command status "missing argument"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command status "too many arguments"
+
+    target_load "${_argv[0]}"
+
+    NEF_LOG_NO_PREFIX=yes
+
+    [ $nef_opt_show_verbose != yes ] \
+        && nef_log "(run with -v to get more information)
+"
+
+    if [ $_info_driver = yes -o $_info_all = yes ]; then
+        nef_log -- "---- DRIVER STATUS -------------------------------------------------------------"
+        driver_${current_driver}_status
+        nef_log
+    fi
+    if [ $_info_system = yes -o $_info_all = yes ]; then
+        nef_log -- "---- SYSTEM STATUS  ------------------------------------------------------------"
+        nef_log "Connection user: $(driver_${current_driver}_exec id)"
+        (driver_${current_driver}_exec ps aux)
+        (driver_${current_driver}_exec df -h | grep -Ev " /dev/| /run")
+        (driver_${current_driver}_exec netstat -xtulpn)
+        [ $nef_opt_show_verbose = yes ] \
+            && (driver_${current_driver}_exec netstat -xtupn)
+        [ $nef_opt_show_verbose = yes ] \
+            && (driver_${current_driver}_exec dpkg -l openssh git)
+        nef_log
+    fi
+    if [ $_info_sysconf = yes -o $_info_all = yes ]; then
+        nef_log -- "---- SYSCONF STATUS ------------------------------------------------------------"
+
+        (driver_${current_driver}_exec test -d /sysconf) \
+            && local _sysconf=YES || local _sysconf=NO
+        nef_log "/sysconf directory present: $_sysconf"
+
+        if [ $_sysconf = YES ]; then
+            (driver_${current_driver}_exec test -d /sysconf/.git) \
+                && local _git=YES || local _git=NO
+            nef_log "/sysconf is a Git-enabled: $_sysconf"
+            if [ $nef_opt_show_verbose = yes ]; then
+                (driver_${current_driver}_exec -c "cd /sysconf && git log -1 | cat") \
+                    | nef_log_pipe "Git HEAD:"
+                (driver_${current_driver}_exec -c "cd /sysconf && git status --porcelain") \
+                    | nef_log_pipe "Git status:"
+            fi
+            nef_log
+            nef_log "Composition of /sysconf:"
+            (driver_${current_driver}_exec -c 'cd /sysconf && ls -ld */* | grep -v " compiled/"')
+            if [ $nef_opt_show_verbose = yes ]; then
+                nef_log
+                nef_log "Sysconf profile trees:"
+                (driver_${current_driver}_exec -c 'cd /sysconf && find */tree -not -type d | xargs ls -ld')
+            fi
+        fi
+    fi
+}
+
+# # command: scan
+# #
+# # Dump a list of detected targets
+# ##
+# script_command_scan() {
+#     local _argv=()
+#     local _command=
+#     local _usage=0
+#     local _argv=()
+
+#     while [ -n "$1" ]; do
+#         case "$1" in
+#             -h) script_command_help help; return ;;
+#             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+#             -*) script_eval_common_option "$1"; shift ;;
+#             *) _argv=("${_argv[@]}" "$1"); shift ;;
+#         esac
+#     done
+
+#     [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command handle-remote-protocol "too many arguments"
+
+#     script_foreach_config script_list_config "${_argv[@]}"
+# }
+
+# command: drivers [-v]
+#
+# Dump a list of supported target drivers
+##
+script_command_drivers() {
+    local _argv=()
+    local _command=
+    local _usage=0
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) script_command_help drivers; return ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command drivers "too many arguments"
+
+    NEF_LOG_NO_PREFIX=yes
+
+    nef_log "Available drivers for sysconf targets:"
+    nef_log "  ssh"
+    nef_log "  lxc"
+}
+
+# command: help [command]
+#
+# Print information about command usage.
+#
+# With no argument, a list of commands is printed.
+##
+script_command_help() {
+    local _argv=()
+    local _command=
+    local _usage=0
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) script_command_help help; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _command="$1"; break ;;
+        esac
+    done
+
+    NEF_LOG_NO_PREFIX=yes
+
+    nef_show_help $_command
+}
+
+
+######################################################################
+# FUNCTIONALITY
+
+target_load() {
+    current_target="$1"
+    current_driver=$(echo "$current_target" | sed 's/:.*//')
+    current_target_id=$(echo "$current_target" | sed -r 's/^[^:]+://')
+
+    nef_log -v "Current driver: $current_driver"
+    nef_log -d "Current target: $current_target"
+    nef_log -d "Current target ID: $current_target_id"
+
+    declare -f driver_${current_driver}_load >/dev/null \
+        || nef_fatal "invalid target driver: ${current_driver}
+Hint: to print a list of available drivers, run: $0 drivers"
+    driver_${current_driver}_load
+}
+
+######################################################################
+# DRIVER: ssh
+
+driver_ssh_load() {
+    driver_ssh_userhost=$current_target_id
+}
+driver_ssh_status() {
+    ssh -v $driver_ssh_userhost -- true 2>&1 | grep -E "auth|Auth|key|version"
+}
+driver_ssh_create() {
+    # Nothing to do
+    true
+}
+driver_ssh_exec() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -c) _argv=("${_argv[@]}" $2); shift 2 ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    exec ssh $driver_ssh_userhost -- "${_argv[@]}"
+}
+
+######################################################################
+# DRIVER: lxc
+
+driver_lxc_create_opts=
+
+driver_lxc_load() {
+    driver_lxc_check_env
+    driver_lxc_container_name=$current_target_id
+    driver_lxc_refresh_state
+}
+driver_lxc_check_env() {
+    if ! which lxc-create >/dev/null; then
+        nef_log "ERROR: LXC is not installed on your system (lxc-create missing)"
+        nef_log "On a Debian/Ubuntu system, it can be installed with the command:"
+        echo >&2
+        echo "sudo apt-get install lxc" >&2
+        exit 3
+    fi
+    if [ $(id -u) -eq 0 ]; then
+        nef_log "RUNNING AS ROOT! Notice: you can work as an unprivileged user as well."
+    else
+        # unprivileged mode -- thanks to https://www.stgraber.org/2014/01/17/lxc-1-0-unprivileged-containers/
+        user_name=$(id -un)
+        group_name=$(id -gn)
+        error=
+        if ! grep -q "^${user_name}:" /etc/subuid; then
+            error="User '$user_name' misses an entry in /etc/subuid"
+        elif ! grep -q "^${group_name}:" /etc/subgid; then
+            error="User '$user_name' misses an entry in /etc/subuid"
+        elif ! grep -q "^${user_name} " /etc/lxc/lxc-usernet; then
+            error="User '$user_name' misses an entry in /etc/lxc/lxc-usernet"
+        elif ! [ -f ~/.config/lxc/default.conf ]; then
+            error="Missing file '~/.config/lxc/default.conf' with 'id_map' declarations"
+        fi
+
+        if [ -n "$error" ]; then
+            nef_log "Error: $error"
+            nef_log "There are 4 files you need to update (only once) for LXC"
+            nef_log "to run properly as unpriviledged user '$user_name'."
+            nef_log ""
+            nef_log "You can fix them automatically with the commands below:"
+            cat <<MEOF >&2
+#-------- COPY-PASTE BELOW TO CONSOLE (LXC quick setup) ------------------------
+grep "^${user_name}:" /etc/subuid || sudo sh -c 'echo "${user_name}:100000:65536" >>/etc/subuid'
+grep "^${group_name}:" /etc/subgid || sudo sh -c 'echo "${group_name}:100000:65536" >>/etc/subgid'
+grep "^${user_name} " /etc/lxc/lxc-usernet || sudo sh -c 'echo "${user_name} veth lxcbr0 10" >>/etc/lxc/lxc-usernet'
+
+[ -d ~/.config/lxc ] || mkdir -p ~/.config/lxc
+[ -f ~/.config/lxc/default.conf ] || cat <<EOF >~/.config/lxc/default.conf
+lxc.network.type = veth
+lxc.network.link = lxcbr0
+lxc.network.flags = up
+lxc.network.hwaddr = 00:16:3e:xx:xx:xx
+lxc.id_map = u 0 100000 65536
+lxc.id_map = g 0 100000 65536
+EOF
+#-------- END ------------------------------------------------------------------
+
+MEOF
+            exit 3
+        fi
+    fi
+}
+driver_lxc_status() {
+    lxc-info -n $driver_lxc_container_name
+    # nef_log "Container status: $driver_lxc_container_state"
+}
+
+driver_lxc_create() {
+    # false
+    # lxc-create
+    if [ "$driver_lxc_container_state" = missing ]; then
+        local distrib=$(echo $script_init_distrib | cut -d: -f1)
+        local release=$(echo $script_init_distrib | cut -d: -f2)
+        local arch=$(echo $script_init_distrib | cut -d: -f3)
+
+        if [ -z "$arch" ]; then
+            arch=$(uname -m)
+        fi
+        [ "$arch" = x86_64 ] && arch=amd64
+
+        if [ -z "$release" ]; then
+            case "$distrib" in
+                debian) release=wheezy ;;
+                ubuntu) release=precise ;;
+                centos) release=6 ;;
+                oracle) release=6.5 ;;
+                plamo) release=5.x ;;
+                *) nef_fatal "please explicit the distribution release you want to install" ;;
+            esac
+        fi
+
+        nef_log "Creating LXC container '$driver_lxc_container_name' with distrib '$distrib', release '$release'..."
+        if [ -n "$driver_lxc_create_opts" ]; then
+            nef_log -v "lxc-create extra options: $driver_lxc_create_opts"
+        fi
+
+        lxc-create -n $driver_lxc_container_name $driver_lxc_create_opts \
+            -t download -- -d $distrib -r $release -a $arch \
+            2>&1 | nef_log_pipe "lxc-create:" \
+            || nef_fatal "lxc-create failed with status $?"
+        # NEF_LOG_NO_PREFIX=yes
+        driver_lxc_refresh_state
+
+        if [ $(id -u) -ne 0 ]; then
+            # fix hwaddr to avoid redundant 00:16:3e:ff:ff:ff (leading to IP conflict)
+            local a=$((RANDOM % 256))
+            local b=$((RANDOM % 256))
+            local c=$((RANDOM % 256))
+            a=$(printf "%x" $a)
+            b=$(printf "%x" $b)
+            c=$(printf "%x" $c)
+            local _newmac=00:16:3e:$a:$b:$c
+            local _configpath=$(lxc-config lxc.lxcpath)/$driver_lxc_container_name/config
+
+            sed -i s/00:16:3e:ff:ff:ff/$_newmac/g $_configpath \
+                && nef_log -v "Fixed $_configpath with MAC address: $_newmac"
+        fi
+    else
+        nef_log "Container exists already, not creating: $driver_lxc_container_name"
+        return 1
+    fi
+}
+
+driver_lxc_exec() {
+    local _argv=()
+    local _sh_c=no
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -c) _sh_c=yes; shift ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+    [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
+
+    case "$driver_lxc_container_state" in
+        running)
+            ;;
+        stopped)
+            [ "$script_attach_nostart" = yes ] \
+                && nef_fatal "Container $driver_lxc_container_name is stopped (and --no-start given)"
+
+            nef_log "Starting container $driver_lxc_container_name in daemon mode..."
+            lxc-start -n $driver_lxc_container_name -d || nef_fatal "lxc-start failed with status $?
+
+HINT: if you have just installed LXC, just reboot your system and retry (it is known)"
+            network_ready=
+            while [ "$network_ready" != ok ]; do
+                ip=$(lxc-info -i -H -n $driver_lxc_container_name)
+                if [ "$ip" = "" ]; then
+                    nef_log -v "Waiting for the network..."
+                    sleep 1
+                    network_ready=retry
+                else
+                    nef_log -v "Got IP: $ip"
+                    network_ready=ok
+                fi
+            done
+
+            # nef_log -v "Waiting for a few seconds to let it be ready..."
+            # sleep 2
+            ;;
+        frozen)
+            [ "$script_attach_nounfreeze" = yes ] \
+                && nef_fatal "Container $driver_lxc_container_name is frozen (and --no-unfreeze given)"
+
+            nef_log "Unfreezing container $driver_lxc_container_name"
+            lxc-unfreeze -n $driver_lxc_container_name || nef_fatal "lxc-unfreeze failed with status $?"
+            ;;
+        missing)
+            nef_fatal "Container $driver_lxc_container_name does not exist!
+Create it with: $0 init $current_target /path/to/sysconf"
+            ;;
+    esac
+
+    exec lxc-attach --clear-env -n $current_target_id -- "${_argv[@]}"
+}
+
+driver_lxc_refresh_state() {
+    driver_lxc_container_state=$(
+        lxc-info -sHn $driver_lxc_container_name 2>/dev/null \
+            | head -n 1 | tr '[:upper:]' '[:lower:]'
+    )
+    [ -z "$driver_lxc_container_state" ] && driver_lxc_container_state=missing
+    nef_log -v "Managing container: $driver_lxc_container_name ($driver_lxc_container_state)"
+    # could be: missing, running, stopped
+}
+
+
+######################################################################
+# COMMAND LINE & RUN
+
+script_eval_common_option() {
+    case "$1" in
+        -v | --verbose) nef_opt_show_verbose=yes; shift ;;
+        -vv | --debug-verbose) nef_opt_show_verbose=yes; nef_opt_show_debug=yes; shift ;;
+        -h | --help) nef_show_usage; exit 0 ;;
+        -*) nef_fatal "bad option: $1, use -h for usage information" ;;
+    esac
+}
+
+nef_fatal_usage_command() {
+    local _command="$1"; shift
+
+    nef_log "Usage error for command '$_command': $*"
+    echo >&2
+    script_command_help --usage "$_command" >&2
+    exit 1
+}
+
+script_parse_cmdline() {
+    nef_command_merge_env
+    nef_command_init_options
+
+    script_command_argv=()
+
+    while [ -n "$1" ]; do
+
+        case "$1" in
+            -*) script_eval_common_option "$1"; shift ;;
+            *) script_command_argv=("$@"); break ;;
+        esac
+
+    done
+
+    [ -z "${script_command_argv[0]}" ] && script_command_argv=(help)
+
+    # Run command
+    script_command_function_name="script_command_${script_command_argv[0]}"
+    unset script_command_argv[0]
+    declare -f $script_command_function_name >/dev/null \
+        || nef_fatal_usage "invalid command: ${script_command_argv[0]}"
+    $script_command_function_name "${script_command_argv[@]}" \
+        || nef_fatal "command ${script_command_argv[0]} returned status $?"
+    nef_log -v "Command returned successfully."
+}
+
+######################################################################
+
+script_parse_cmdline "$@"
