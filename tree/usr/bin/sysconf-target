@@ -17,11 +17,11 @@ nef_command_prefix=script_command
 
 # Source 'shell-command' from sysconf.base, from any available location
 script_dir=$(dirname $(readlink -f $0))
-PATH=$script_dir/../share/nef-common:/usr/share/nef-common . shell-command
+PATH=$script_dir:$script_dir/../share/nef-common:/usr/share/nef-common . shell-command
 if [ $? -ne 0 ]; then
     echo "FATAL ERROR: could not find share/nef-common/shell-command" >&2
     echo "HINT: keep sysconf-target within its sysconf.base tree" >&2
-    echo "      (symlinking works; sysconf being installed in /usr also works)"
+    echo "      (symlinking works; sysconf being installed in /usr also works)" >&2
     exit 2
 fi
 
@@ -493,7 +493,8 @@ target_load() {
 
     declare -f driver_${current_driver}_load >/dev/null \
         || nef_fatal "invalid target driver: ${current_driver}
-Hint: to print a list of available drivers, run: $0 drivers"
+
+HINT: to print a list of available drivers, run: $0 drivers"
     driver_${current_driver}_load
 }
 
@@ -700,8 +701,9 @@ HINT: if you have just installed LXC, just reboot your system and retry (it is k
             lxc-unfreeze -n $driver_lxc_container_name || nef_fatal "lxc-unfreeze failed with status $?"
             ;;
         missing)
-            nef_fatal "Container $driver_lxc_container_name does not exist!
-Create it with: $0 init $current_target /path/to/sysconf"
+            nef_fatal "Container does not exist: $driver_lxc_container_name!
+
+HINT: Create it with: $0 init $current_target /path/to/sysconf"
             ;;
     esac
 
