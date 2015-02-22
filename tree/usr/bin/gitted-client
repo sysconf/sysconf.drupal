@@ -25,6 +25,7 @@ script_dir=$(dirname $(readlink -f $0))
 PATH=$script_dir/../share/nef-common:$script_dir/../../../../sysconf.base/tree/usr/share/nef-common:/usr/share/nef-common . shell-command
 if [ $? -ne 0 ]; then
     echo "FATAL ERROR: could not find share/nef-common/shell-command" >&2
+    echo "HINT: keep gitted-client within its sysconf/sysconf.gitted (along with sysconf.base)" >&2
     exit 2
 fi
 sysconf_target_command=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH which sysconf-target)
