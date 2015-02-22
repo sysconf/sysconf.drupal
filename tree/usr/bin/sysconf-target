@@ -17,8 +17,13 @@ nef_command_prefix=script_command
 
 # Source 'shell-command' from sysconf.base, from any available location
 script_dir=$(dirname $(readlink -f $0))
-PATH=$script_dir/../share/nef-common:/usr/share/nef-common \
-    . shell-command || exit 2
+PATH=$script_dir/../share/nef-common:/usr/share/nef-common . shell-command
+if [ $? -ne 0 ]; then
+    echo "FATAL ERROR: could not find share/nef-common/shell-command" >&2
+    echo "HINT: keep sysconf-target within its sysconf.base tree" >&2
+    echo "      (symlinking works; sysconf being installed in /usr also works)"
+    exit 2
+fi
 
 
 ######################################################################
