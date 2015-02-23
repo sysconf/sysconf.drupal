@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# SYSCONF-target tool -- create/attach  a target (such as machine/remote hosts)
+# SYSCONF-target tool -- create/attach a target (such as machine/remote hosts)
 #
 # Different drivers are supported, such as "lxc" and "ssh" (see the "drivers" command).
 #
@@ -10,6 +10,11 @@
 #     sysconf-target attach lxc:mycontainer /bin/echo something
 #     sysconf-target attach ssh:myhost      service xyz reload
 #
+# Learn more about Sysconf at: http://gitted.net/sysconf/
+#
+##
+# HISTORY
+#   20150221 first version by JF Gigand <jf@geonef.fr>
 ##
 
 nef_command_name=sysconf-target
@@ -255,9 +260,20 @@ HINT: provide --force to overwrite"
     nef_log "Done."
 }
 
-# command: attach <target> { -c <shell code> | [-- command [<args>]]] }
+# command: attach <target> { -c <shell code> | [-- COMMAND ...]] }
 #
 # Start target if needed and run the given command inside
+#
+# Examples:
+#   sysconf-target attach lxc:container ps aux
+#   sysconf-target attach ssh:user@host "cd /some/path && ./server"
+#
+# It is a pure EXEC command:
+#   - return status code is the one that is returned by COMMAND
+#   - stdin, stdout and stderr are all preserved
+#   - for most drivers, the terminal is forwarded
+#   - use "--" to make sure all following args are forwarded well
+#   - to execute shell syntax code, use the -c option instead of explicit "sh -c"
 #
 # Options can be given at any position:
 #
@@ -765,12 +781,13 @@ script_parse_cmdline() {
     [ -z "${script_command_argv[0]}" ] && script_command_argv=(help)
 
     # Run command
-    script_command_function_name="script_command_${script_command_argv[0]}"
+    script_command_name="${script_command_argv[0]}"
     unset script_command_argv[0]
+    script_command_function_name="${nef_command_prefix}_${script_command_name}"
     declare -f $script_command_function_name >/dev/null \
-        || nef_fatal_usage "invalid command: ${script_command_argv[0]}"
+        || nef_fatal_usage "invalid command: $script_command_name"
     $script_command_function_name "${script_command_argv[@]}" \
-        || nef_fatal "command ${script_command_argv[0]} failed with status $?"
+        || nef_fatal "command ${script_command_name} failed with status $?"
     nef_log -v "Command returned successfully."
 }
 

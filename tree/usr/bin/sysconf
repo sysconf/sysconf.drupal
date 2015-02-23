@@ -3,21 +3,33 @@
 # SYSCONF tool - helper to manage sysconf repositories and get them live on an UNIX system
 #
 # Started on 2014-01 by JF Gigand <jf@geonef.fr>
+# Learn more about Sysconf at: http://gitted.net/sysconf/
 #
-# Initialize sysconf like this:
-# # mkdir -p /sysconf/actual
-# # echo sysconf.base >/sysconf/actual/deps
-# # echo / >/sysconf/target
-# # cd /sysconf
-# # git clone https://github.com/geonef/sysconf.base.git
-# # sysconf.base/tree/usr/bin/sysconf compile install update
+# Make a new sysconf like this:
+#   mkdir -p /sysconf/actual
+#   echo sysconf.base >/sysconf/actual/deps
+#   echo / >/sysconf/target
+#   cd /sysconf
+#   git clone https://github.com/geonef/sysconf.base.git
 #
-# To remove installed symlinks:
+# Then use sysconf or sysconf-target (more flexible) to apply it.
+# These both are equivalent:
+#   sysconf.base/tree/usr/bin/sysconf-target init local:system .
+#   sysconf.base/tree/usr/bin/sysconf compile install update
+#
+# To install the sysconf on a SSH host:
+#   sysconf.base/tree/usr/bin/sysconf-target init ssh:user@host .
+#
+# To install the sysconf on a new or existing LXC container:
+#   sysconf.base/tree/usr/bin/sysconf-target init lxc:container42 .
+#
+# To remove installed symlinks, run on the target system:
 #   find /usr/bin/ /etc/ -type l -lname '/sysconf/*' | xargs rm
 #
-# Detailed instructions at:
-# https://github.com/geonef/sysconf.base/blob/master/doc/usage.md
-#
+# HISTORY
+#   201401   first version by JF Gigand <jf@geonef.fr>
+#   20150221 new "sysconf-target" tool, a kinf of installer (bin/sysconf is untouched)
+##
 
 nef_command_name=sysconf
 
