@@ -1,0 +1,12 @@
+#!/bin/bash
+#
+
+. /usr/share/gitted/shell-driver || exit 2
+
+gitted_driver_status_code() {
+
+}
+
+
+
+gitted_driver_run "$@"

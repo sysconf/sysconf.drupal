@@ -1,12 +1,32 @@
 #!/bin/bash
 #
-# gitted - manage the life of an LXC container through git push/fetch
+# gitted - manage the Gitted system like a Git repository -- http://gitted.net
 #
+# Gitted is a shell framework that turn a UNIX system into a Git repository
+# where the machine state is seen as a "Git work data" which can be
+# checked out/commited from/to Git branches (the "state branches").
+#
+# This is the server, responsible for managing system state around a central repository
+# located at: /local/repository.git.
+#
+# IO are defined in /etc/gitted/state/ where the state branch <name> is defined
+# by a <name>.conf file. See examples in /usr/share/doc/gitted/state.examples/.
+#
+# State drivers are usually found in /usr/lib/gitted (driver-sysconf, driver-mysql, etc.)
+#
+# Add -h or --help to any command for detailed information.
+#
+##
 # HISTORY
 #   20140818 first version by JF Gigand <jf@geonef.fr>
+#   20150222 refactorized to include the new IO paradigm
+##
 
 nef_command_name=gitted
-. $(dirname $0)/../share/nef-common/shell-command || exit 2
+nef_command_prefix=script_command
+
+script_dir=$(dirname $(readlink -f $0))
+PATH=$script_dir:$script_dir/../share/nef-common:$script_dir/../../../../sysconf.base/tree/usr/share/nef-common:/usr/share/nef-common . shell-command || exit 2
 
 
 ######################################################################
@@ -14,10 +34,472 @@ nef_command_name=gitted
 
 # Path of local GIT repository
 export GIT_DIR=/local.repository.git
+export GITTED_STATE_CONFIG_DIR=/etc/gitted/state
+export GITTED_DRIVER_PREFIX_PATH=/usr/lib/gitted/driver-
 
 
 ######################################################################
-# COMMANDS
+# COMMANDS: WORK STATE
+
+# command: status [<state branch> ...] [--quiet | --branches | --list | --diff]
+#
+# Show status of configured state branch(es) with different verbosity levels
+#
+# Branch arguments are matched against the configuration from /etc/gitted/state,
+# which may exist or not as real Git branches in /local.repository.git/refs/heads.
+#
+# Giving no <state branch> expands to all branches from configuration (or all
+# branches in Git's refs/heads/ if --existing is set).
+#
+# Any <state branch>/ (ending with a slash) is expanded to its nested state
+# branches. The slash is mandatory: omitting it will trigger an error.
+#
+# Options can be given at any position:
+#
+#   --quiet
+#               Do not ouput anything, just return status code 0 if clean, 1 if dirty
+#
+#   --branches
+#               Print the list of branches with a status letter like 'git status'
+#               does: (space)/M/A/D for (clean/edited/added/deleted).
+#               This is the default with no <state branch> is given.
+#
+#   --list
+#               List state-level differences from branch to working state, in a
+#               format similar to 'git status --porcelain'.
+#               This is the default when <state branch> is given.
+#
+#   --diff
+#               Show full differences from branch to work state. The format
+#               will vary across drivers, be it like 'git diff' or whatever.
+#               Some drivers won't support it and will print a --list instead.
+#
+##
+#   --existing  (OBSOLETE, NOT IMPLEMENTED)
+#               Match branches against real /local.repository.git/refs/heads/
+#               instead of state configuration from /etc/gitted/state.
+#               Any missing branch triggers an error.
+##
+script_command_status() {
+    local _view=
+    local _expand_opts=
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            --quiet) [ -n "$_view" ] \
+                && nef_fatal_usage_command status "--quiet conflicts with --$_view"
+                _view=quiet; shift ;;
+            --branches) [ -n "$_view" ] \
+                && nef_fatal_usage_command status "--branches conflicts with --$_view"
+                _view=branches; shift ;;
+            --list) [ -n "$_view" ] \
+                && nef_fatal_usage_command status "--list conflicts with --$_view"
+                _view=list; shift ;;
+            --diff) [ -n "$_view" ] \
+                && nef_fatal_usage_command status "--diff conflicts with --$_view"
+                _view=diff; shift ;;
+            # --existing) _expand_opts="$_expand_opts --existing"; shift ;;
+            -h|--help) script_command_help status; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    if [ -z "$_view" ]; then
+        [ "${#_argv[@]}" -eq 0 ] && _view=branches || _view=list
+    fi
+
+    script_return_status=yes # tell the caller not throw an error in case of non-null status
+
+    for _state_branch in $(script_expand_state_branches --usage-command status $_expand_opts -- "${_argv[@]}"); do
+        (
+            # nef_log "branch: $_state_branch"
+            script_load_state_config $_state_branch
+
+            export GITTED_CONFIG_DRIVER_ACTION=status
+            export GITTED_CONFIG_STATUS_REPORT=$_view
+
+            script_call_driver
+            local _status=$?
+            case $_view in
+                branches)
+                    local _sign=" "
+                    case $_status in
+                        0) _sign=" " ;;
+                        1) _sign=M ;;
+                        2) _sign=A ;;
+                        3) _sign=D ;;
+                    esac
+                    echo "$_sign $_state_branch"
+                    ;;
+                list | diff)
+                    ;;
+            esac
+            exit $_status
+        )
+    done
+}
+
+# command: commit [<state branch> ...] [-m <message>]
+#
+# Commit state from driver to Git branch
+#
+# For each <state branch> provided, request the driver to turn the present state
+# into a Git commit and update the branch in /local.repository.git/refs/heads/.
+#
+# Depending on the driver, the state can be a live database, a local directory,
+# rotated logs, etc.
+#
+# Giving no <state branch> expands to all branches from configuration (or all
+# branches in Git's refs/heads/ if --existing is set).
+#
+# Any <state branch>/ (ending with a slash) is expanded to its nested branches.
+# The slash is mandatory: omitting it triggers an error, to prevent recursion
+# from happening by mistake.
+#
+# All branches are updated in an atomic all-or-none operation: if any commit
+# fails, the command fails too and no branch is updated, even if some commits
+# were done with success. Commits are made in the same order as specified.
+#
+# git-commit(1)-like options:
+#
+#   -m <message>
+#               Set commit message (like 'git commit -m'). The same message
+#               is used to commit each <state branch>. To use a different message,
+#               run 'gitted commit -m' on each branch with a specific message.
+#
+#   --author <author>
+#               Override the author as specified in the state branch
+#               configuration or defaults to git-config "user.name" and "user.email"
+#
+#   --allow-empty
+#               Create a commit even if no change (same as "git commit --allow-empty")
+#
+# Other options:
+#
+#   --existing
+#               Never create a branch which does not exist already in Git,
+#               fails with error instead. Slash-expansion (<state branch>/)
+#               is restricted to existing .git/refs/heads/ branches.
+##
+# Not implemented:
+#
+#   --lock
+#               Depending on the state driver, lock the state in readonly mode
+#               during the exportation of the state into a commit. Useful to avoid
+#               database changes and ensure state commit integrity.
+#
+script_command_commit() {
+    GITTED_CONFIG_COMMIT_ALLOW_EMPTY=${GITTED_CONFIG_COMMIT_ALLOW_EMPTY:-false}
+
+    local _msg=
+    local _author=
+    local _allow_empty=false
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -m) _msg="$2"; shift 2 ;;
+            --author) _author="$2"; shift 2 ;;
+            --allow-empty) _allow_empty=true; shift ;;
+            -h|--help) script_command_help commit; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    for _state_branch in $(script_expand_state_branches $_expand_opts -- "${_argv[@]}"); do
+        (
+            # nef_log "branch: $_state_branch"
+            script_load_state_config $_state_branch
+
+            export GITTED_CONFIG_DRIVER_ACTION=commit
+            export GITTED_CONFIG_COMMIT_MESSAGE=$_msg
+            export GITTED_CONFIG_COMMIT_AUTHOR=$_author
+            export GITTED_CONFIG_COMMIT_ALLOW_EMPTY=$_allow_empty
+
+            script_call_driver
+        ) || nef_fatal "state branch failed to be commited: $_state_branch"
+    done
+
+    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command commit "too many arguments"
+}
+
+# command: reset  <state branch> {HEAD | <commit> | --coming}  [<mode>]
+#
+# Reset the work state of <state branch> to the state of given Git commit
+#
+# Works like git-reset(1) except there is no staging index. The Git "working tree" is
+# like the Gitted "working state" whose type depend on the driver (sysconf, mysql, etc.).
+#
+# <state branch> is reset to <commit> (if not HEAD) and <mode> tells what to do
+# with the working state. If <mode> is omitted, defaults to "--keep".
+#
+# --coming changes the behaviour: nothing is done yet but options are remembered
+# for a later git-push operation that implies <state branch>. Indeed, any push
+# operation on a <state branch> also triggers a "gitted reset" through the
+# "update" hook in order to keep
+#
+# The <mode> must be one of the following:
+#
+#   --soft
+#       Do not update the working state, update Git branch ref only.
+#       Working state is ignored. In this mode, <commit> needs to be different
+#       from branch HEAD or the command will warn there is "nothing to do".
+#
+#       Doing this and then "gitted commit" will save the current state onto
+#       the commit given to "gitted reset".
+#
+#       Use with --coming to accept the next push on <state branch> like pure Git.
+#
+#   --hard
+#       Reinitialize working state from given <commit> or HEAD.
+#       Any changes are lost (use "gitted status" for checking).
+#
+#       Use with --coming to get the next push on <state branch> to fully overwrite
+#       the working state.
+#
+#   --keep
+#       If the working state had not changed since HEAD, update it from the new
+#       <commit> and update the Git branch ref.
+#       If any change is to be committed, fail with error and do not update the Git branch.
+#
+#       --coming is useless here, as --keep is the defaut for pushes anyway.
+#
+#   --merge
+#       Ask the state driver to make a smart, but safe, merge of the working state
+#       with the changes from current HEAD to <commit>.
+#
+#       It is up to the driver how the merge is made and what is a conflict.
+#
+#       For example, MySQL state changes may affect some tables while other
+#       tables can be updated to new HEAD.
+#
+#       Use with --coming to make the next push on <state branch> "smarter", by
+#       trying to merge the push instead of rejecting it in case of "dirty state".
+##
+# Not implemented:
+#
+#   --driver <command>
+#       Call the driver <command> and only if the exit code is successful,
+#       update the branch ref.
+##
+script_command_reset() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help reset; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command reset "too many arguments"
+}
+
+######################################################################
+# COMMANDS: MANAGEMENT
+
+# command: config [<state branch>] [<mode>]
+#
+# Read/change/add/remove items and create/delete states configurations
+#
+# Without <state branch>, a
+# The <mode> must be one of the following:
+#
+# --create
+# --set
+# --remove
+#
+##
+script_command_config() {
+    local _argv=()
+    local _command=
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help init; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+}
+
+# command: init
+#
+# This command initializes the local system with a Gitted repository.
+#
+# /local/repository.git and hooks are created/fixed for use by Gitted.
+# IO are initialized (command "init" of drivers).
+#
+# It is safe to run "init" multiples times : no data will be erased, like with git-init(1).
+# It can be used to fix the hooks.
+#
+##
+script_command_init() {
+    local _argv=()
+    local _command=
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help init; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    git init --bare $GIT_DIR
+    nef_log "Writing: $GIT_DIR/README.gitted"
+    cat <<EOF >$GIT_DIR/README.gitted
+AUTOMATICALLY GENERATED BY $0 on $(date)
+
+This is the /local.repository.git which is the heart of this "$(hostname)" Gitted system.
+Run "$0 init" to fix/upgrade it: no data will be lost, it just fix hooks and refs.
+
+For more information, run "$0 help" or check out http://gitted.net/.
+EOF
+nef_log "Fixing hooks"
+for hook in pre-receive update; do
+    echo -e '#!/bin/sh\nexec gitted git-hook-'$hook' -- "$@"' \
+        >$GIT_DIR/hooks/$hook
+    chmod 755 $GIT_DIR/hooks/$hook
+done
+}
+
+
+######################################################################
+# COMMANDS: GIT INTEGRATION
+
+# command: git-upload-pack
+#
+# Forward Git protocol /local.repository.git
+#
+# This is not meant to be used directly, but through Git remote commands
+# such as git-fetch(1).
+#
+# Usage examples:
+#   git fetch "ext::gitted %S" sysconf
+#   git fetch "ext::gitted %S" mysql
+##
+script_command_git-upload-pack() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help git-upload-pack; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command git-upload-pack "too many arguments"
+
+    exec git upload-pack $GIT_DIR
+}
+
+# command: git-receive-pack
+#
+# Forward Git protocol to /local/repository.git
+#
+# This is not meant to be used directly, but through Git remote commands such as
+# git-push(1).
+#
+# Usage examples:
+#   git push "ext::gitted %S" sysconf
+#   git push "ext::gitted %S" mysql_bak:mysql
+##
+script_command_git-receive-pack() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help git-receive-pack; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command git-receive-pack "too many arguments"
+
+    exec git receive-pack $GIT_DIR
+}
+
+# command: git-hook-pre-receive
+#
+# Check that branches being pushed are configured IOs and system state is not dirty
+#
+# This command should not be used directly, but be called by
+# /local.repository.git/hooks/pre-receive (run 'gitted init' to setup).
+##
+script_command_git-hook-pre-receive() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help git-receive-pack; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command git-receive-pack "too many arguments"
+
+}
+
+# command: git-hook-update
+#
+# Update IO work state with new commit
+#
+# This command should not be used directly, but be called by
+# /local.repository.git/hooks/update (run 'gitted init' to setup).
+##
+script_command_git-hook-update() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help git-receive-pack; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command git-receive-pack "too many arguments"
+}
+
+######################################################################
+# COMMANDS: OTHER
+
+# # command: git <git-command> [args]
+# #
+# # Execute the given GIT command on the local repository
+# #
+# # (mainly for debugging/ingo purposes)
+# ##
+# script_command_git() {
+#     local _argv=()
+#     local _command=
+#     local _usage=0
+#     local _argv=()
+
+#     while [ -n "$1" ]; do
+#         case "$1" in
+#             --usage) _usage=1; shift ;;
+#             -h) script_command_help help; return ;;
+#             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+#             -*) script_eval_common_option "$1"; shift ;;
+#             *) _argv=("${_argv[@]}" "$1"); shift ;;
+#         esac
+#     done
+
+#     [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command remote "missing argument(s)"
+
+#     cd $GIT_DIR
+#     git "${_argv[@]}"
+# }
+
 
 # command: help [command]
 #
@@ -25,16 +507,15 @@ export GIT_DIR=/local.repository.git
 #
 # With no argument, a list of commands is printed.
 ##
-gitted_command_help() {
+script_command_help() {
     local _argv=()
     local _command=
-    local _usage=0
 
     while [ -n "$1" ]; do
         case "$1" in
-            --usage) _usage=1; shift ;;
-            -h) gitted_command_help help; return ;;
-            -*) gitted_eval_common_option "$1"; shift ;;
+            --usage) shift ;;
+            -h) script_command_help help; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
             *) _command="$1"; break ;;
         esac
     done
@@ -42,152 +523,278 @@ gitted_command_help() {
     nef_show_help $_command
 }
 
-# command: git-remote-command <git-command>
-#
-# Forward the command and manage import/export if git-receive-pack or git-upload-pack
-#
-##
-gitted_command_git-remote-command() {
-    local _argv=()
-    local _command=
-    local _usage=0
+# # command: git-remote-command <git-command>
+# #
+# # Forward the command and manage import/export if git-receive-pack or git-upload-pack
+# #
+# ##
+# script_command_git-remote-command() {
+#     local _argv=()
+#     local _command=
+#     local _usage=0
 
-    while [ -n "$1" ]; do
-        case "$1" in
-            --usage) _usage=1; shift ;;
-            -h) gitted_command_help help; return ;;
-            -*) gitted_eval_common_option "$1"; shift ;;
-            *) _command="$1"; break ;;
-        esac
-    done
+#     while [ -n "$1" ]; do
+#         case "$1" in
+#             --usage) _usage=1; shift ;;
+#             -h) script_command_help help; return ;;
+#             -*) script_eval_common_option "$1"; shift ;;
+#             *) _command="$1"; break ;;
+#         esac
+#     done
 
-    gitted_run_hooks pre-git
-    gitted_run_git_script export
-    gitted_run_hooks pre-git-command
+#     script_run_hooks pre-git
+#     script_run_git_script export
+#     script_run_hooks pre-git-command
 
-    $_command $GIT_DIR
+#     $_command $GIT_DIR
 
-    gitted_run_hooks post-git-command
-    gitted_run_git_script import
-    gitted_run_hooks post-git
-}
-
-# command: git <git-command>
-#
-# Execute the given GIT command on the local repository
-#
-# (mainly for debugging/ingo purposes)
-##
-gitted_command_git() {
-    local _argv=()
-    local _command=
-    local _usage=0
-    local _argv=()
-
-    while [ -n "$1" ]; do
-        case "$1" in
-            --usage) _usage=1; shift ;;
-            -h) gitted_command_help help; return ;;
-            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
-            -*) gitted_eval_common_option "$1"; shift ;;
-            *) _argv=("${_argv[@]}" "$1"); shift ;;
-        esac
-    done
-
-    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command remote "missing argument(s)"
-
-    cd $GIT_DIR
-    git "${_argv[@]}"
-}
-
-# command: git <git-command>
-#
-# Execute the given GIT command on the local repository
-#
-# (mainly for debugging/ingo purposes)
-##
-gitted_command_git() {
-    local _argv=()
-    local _command=
-    local _usage=0
-    local _argv=()
-
-    while [ -n "$1" ]; do
-        case "$1" in
-            --usage) _usage=1; shift ;;
-            -h) gitted_command_help help; return ;;
-            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
-            -*) gitted_eval_common_option "$1"; shift ;;
-            *) _argv=("${_argv[@]}" "$1"); shift ;;
-        esac
-    done
-
-    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command remote "missing argument(s)"
-
-    cd $GIT_DIR
-    git "${_argv[@]}"
-}
+#     script_run_hooks post-git-command
+#     script_run_git_script import
+#     script_run_hooks post-git
+# }
 
 ######################################################################
 # INTERNAL FUNCTIONALITY
 
-# usage: gitted_run_git_script { import | export }
-gitted_run_git_script() {
-    op=$1
-    for script in /etc/gitted/sync/*.$op; do
-        name=$(basename $script)
-        export GITTED_GIT_BRANCH=$(echo $name | sed 's/\..*//')
-        if [ "$name" = "$GITTED_GIT_BRANCH.$op" ]; then
-            $script 2>&1 | nef_log_pipe # "<$name>"
+#
+# some/branch   -> left untouched
+# dir/*         -> "*" is expanded to all descendants that exist PHYSICALLY
+# dir/*/suffix  -> same, restricting to suffix
+# a/b/**/suffix -> when "**" is encountered, the most specific driver
+#                   is identified (be it "a" or "a/b" or "a/b/c/d).
+#
+#       First, a physical list (a/b/*/suffix) is made, that will be merged with
+#       the branch list of any driver within "a/b".
+#
+#       For each driver found, call the "list" command.
+#       Restrict the list to any part after the driver path, replacing "**" with "*"
+#       (from ex above: "b/*/suffix" or "*/suffix" or "*/suffix")
+#
+script_expand_state_branches() {
+    local _usage_name=
+    local _existing_only=no
+    local _config
+    local _base=$GITTED_STATE_CONFIG_DIR/
+    while [ -n "$1" ]; do
+        case "$1" in
+            --usage-command) _usage_name=$2; shift 2 ;;
+            --existing) _existing_only=yes; shift ;;
+            --) shift; break ;;
+            *) break ;;
+        esac
+    done
+
+    while [ -n "$1" ]; do
+        # nef_fatal CHECK
+        [[ "$1" =~ ^(([-a-zA-Z._]+|\*\*?)(/|$))+$ ]] \
+            || nef_fatal_usage_command "$_usage_name" "invalid <state branch> name: $1"
+
+        # [[ "$1" =~ [a-zA-Z./-_*]+ ]] || nef_fatal "invalid <state branch> name: $1"
+
+
+        if [[ "$1" =~ \* ]]; then
+
+            if [[ "$1" =~ \*\* ]]; then    # branch has a "**": ignore existing branch altogether
+
+                nef_fatal "pattern not supported yet: '**'"
+                local _ifs="$IFS"; IFS=/;
+                local _comps=($1); IFS="$_ifs"
+
+                # [ -d "${_base}$1" ] || nef_fatal "not a branch directory: $1"
+                # for _config in $(find ${_base}${1%/} -name '*.config'); do
+                #     local _branch=${_config:${#_base}}
+                #     _branch=${_branch%.config}
+                #     echo $_branch
+                # done
+
+            else                # branch has a "*", not "**": doing file matching
+                cd $GIT_DIR/refs/heads
+                local _branch=
+                for _branch in $(find -type f -path ./$1); do
+                    echo ${_branch#./}
+                done
+                [ -z "$_branch" ] && nef_fatal_usage_command "$_usage_name" "pattern does not match any branch: $1"
+                # $GIT_DIR/refs/heads/$1
+            fi
+
+        else    # no "*" or "**" in branch: just checking --existing
+            [ -d $GIT_DIR/refs/heads/$1 ] \
+                && nef_fatal_usage_command "$_usage_name" "branch is a directory: $1"
+
+            if [ $_existing_only = yes ]; then
+                [ -f $GIT_DIR/refs/heads/$1 ] \
+                    || nef_fatal_usage_command "$_usage_name" "--existing given but branch does not exist: $1"
+            fi
+            echo "$1"
         fi
+        shift
     done
 }
 
-# usage: gitted_run_hooks <hook-name>
-gitted_run_hooks() {
-    local _name=$1
-    local _dir=/etc/gitted/hook/${_name}.d
+# usage: script_load_state_config_section <state branch>
+script_load_state_config() {
+    local _branch=
+    local _subbranch=
+    local _configpath=
+    local _ifs="$IFS"; IFS=/;
+    local _comps=($1); IFS="$_ifs"
 
-    if [ -d $_dir ]; then
-        for hook in $(find $_dir -executable -and -not -type d); do
-            $hook 2>&1 | nef_log_pipe "${hook}:"
-        done
-    fi
+    for _comp in "${_comps[@]}"; do
+        _configpath=$GITTED_STATE_CONFIG_DIR/${_branch}/${_comp}.config
+        [ -n "$_branch" ] && _branch=$_branch/$_comp || _branch=$_comp
+        [ -n "$_subbranch" ] && _subbranch=$_subbranch/$_comp || _subbranch=$_comp
+
+        if [ -r $_configpath ]; then
+
+            script_load_config_file $_configpath
+
+            if [ -n "$GITTED_CONFIG_STATE_DRIVER" ]; then
+                script_driver_branch=$_branch
+                _subbranch=
+            fi
+
+            # if [ "$GITTED_CONFIG_STATE_DIRMODE" != true ]; then
+            #   # warn if component remaining
+            # fi
+        fi
+    done
+
+    [ -z "$GITTED_CONFIG_STATE_DRIVER" ] \
+        && nef_fatal "state branch is not configured: $1"
+
+    script_driver_full_branch=$1
+    export GITTED_CONFIG_STATE_BRANCH=$_subbranch
+
+    nef_log -v "Loaded state branch: $script_driver_branch[/$_subbranch]"
 }
+
+# usage: script_load_config_file <config file path>
+script_load_config_file() {
+    # local _regexp=^$(echo $2 | sed 's/\./\\./g')\\.
+    local _configpath="$1"
+    local lines=()
+    local _name=
+    local _value=
+    local _var=()
+
+    nef_log -v "Loading file: $_configpath"
+
+    local _ifs="$IFS"; IFS=$'\n'
+    _lines=($(git config --file "$_configpath" -l )); IFS="$_ifs"
+
+    for _line in "${_lines[@]}"; do
+        _ifs="$IFS"; IFS==
+        _var=($_line)
+        IFS="$_ifs"
+        _name="${_var[0]/./_}"
+        _name="${_name^^}"
+        _value="${_var[1]}"
+
+        nef_log -d "Exporting variable: GITTED_${_name}=\"${_value}\""
+        eval "export GITTED_CONFIG_${_name}=\"${_value}\""
+    done
+}
+
+script_call_driver() {
+    local _driverpath=${GITTED_DRIVER_PREFIX_PATH}${GITTED_CONFIG_STATE_DRIVER}
+
+    [ -x $_driverpath ] || nef_fatal "invalid driver: $GITTED_CONFIG_STATE_DRIVER"
+
+    nef_log -v "Running driver: $_driverpath"
+    [ "$nef_opt_show_debug" = yes ] && env | grep ^GITTED_CONFIG_
+
+    $_driverpath
+}
+
+
+# # usage: script_run_git_script { import | export }
+# script_run_git_script() {
+#     op=$1
+#     for script in /etc/gitted/sync/*.$op; do
+#         name=$(basename $script)
+#         export GITTED_GIT_BRANCH=$(echo $name | sed 's/\..*//')
+#         if [ "$name" = "$GITTED_GIT_BRANCH.$op" ]; then
+#             $script 2>&1 | nef_log_pipe # "<$name>"
+#         fi
+#     done
+# }
+
+# # usage: script_run_hooks <hook-name>
+# script_run_hooks() {
+#     local _name=$1
+#     local _dir=/etc/gitted/hook/${_name}.d
+
+#     if [ -d $_dir ]; then
+#         for hook in $(find $_dir -executable -and -not -type d); do
+#             $hook 2>&1 | nef_log_pipe "${hook}:"
+#         done
+#     fi
+# }
 
 
 ######################################################################
 # COMMAND LINE & RUN
 
-gitted_eval_common_option() {
+# common options:
+#   -v, --verbose               Enable verbose logging on stderr
+#   -vv, --debug-verbose        Enable debug-level verbosity (implies -v)
+#   -h, --help                  Show help for main usage or specific command
+##
+script_eval_common_option() {
     case "$1" in
         -v | --verbose) nef_opt_show_verbose=yes; shift ;;
         -vv | --debug-verbose) nef_opt_show_verbose=yes; nef_opt_show_debug=yes; shift ;;
         -h | --help) nef_show_usage; exit 0 ;;
-        -*) nef_fatal_usage "bad option: $1" ;;
+        -*) nef_fatal "bad option: $1, use -h for usage information" ;;
     esac
 }
 
-nef_command_merge_env
-nef_command_init_options
+nef_fatal_usage_command() {
+    local _command="$1"; shift
 
-gitted_command_argv=()
+    nef_log "$_command usage error: $*"
+    echo >&2
+    script_command_help --usage "$_command" >&2
+    exit 1
+}
 
-while [ -n "$1" ]; do
+script_parse_cmdline() {
+    nef_command_merge_env
+    nef_command_init_options
 
-    case "$1" in
-        -*) gitted_eval_common_option "$1"; shift ;;
-        *) gitted_command_argv=("$@"); break ;;
-    esac
+    script_command_argv=()
 
-done
+    while [ -n "$1" ]; do
 
-[ -z "${gitted_command_argv[0]}" ] && gitted_command_argv=(help)
+        case "$1" in
+            -*) script_eval_common_option "$1"; shift ;;
+            *) script_command_argv=("$@"); break ;;
+        esac
+
+    done
+
+    [ -z "${script_command_argv[0]}" ] && script_command_argv=(help)
 
 
-# Run command
-gitted_command_function_name="gitted_command_${gitted_command_argv[0]}"
-unset gitted_command_argv[0]
-$gitted_command_function_name "${gitted_command_argv[@]}" \
-    || nef_fatal "command ${gitted_command_argv[0]} returned status $?"
-nef_log -v "Command returned successfully."
+    # Run command
+    script_command_name="${script_command_argv[0]}"
+    unset script_command_argv[0]
+    script_command_function_name="${nef_command_prefix}_${script_command_name}"
+    declare -f $script_command_function_name >/dev/null \
+        || nef_fatal_usage "invalid command: $script_command_name"
+    $script_command_function_name "${script_command_argv[@]}"
+    local _status=$?
+    if [ $_status -eq 0  ]; then
+        nef_log -v "Command returned successfully."
+    else
+        if [ "$script_return_status" != yes ]; then
+            nef_fatal "command ${script_command_name} failed with status $_status"
+        else
+            nef_log -v "command ${script_command_name} returned status $_status"
+        fi
+    fi
+}
+
+######################################################################
+
+script_parse_cmdline "$@"

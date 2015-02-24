@@ -1,0 +1,47 @@
+# Framework structure for gitted drivers written in bash script  -*- shell-script -*-
+
+if [ -z "$GITTED_CONFIG_STATE_DRIVER" ]; then
+    echo "Should be runned by bin/gitted" >&2
+    exit 1
+fi
+
+. /usr/share/nef-common/shell-command || exit 2
+
+
+gitted_driver_run() {
+    local _func=gitted_driver_$GITTED_CONFIG_DRIVER_ACTION
+    $_func "$@"
+}
+
+gitted_driver_status() {
+    case $GITTED_CONFIG_STATUS_REPORT in
+        quiet|branches) gitted_driver_status_code ;;
+        list)
+            gitted_driver_status_list
+            ;;
+        diff)
+            gitted_driver_status_diff
+            ;;
+    esac
+}
+gitted_driver_status_code() {
+    nef_fatal "not implemented by driver: gitted_driver_status_code"
+}
+gitted_driver_status_list() {
+    gitted_driver_status_code
+    local _status=$?
+    echo "Status code is: $_status"
+    # case $? in
+    # esac
+}
+gitted_driver_status_diff() {
+    gitted_driver_status_list
+}
+
+gitted_driver_reset() {
+    false
+}
+
+gitted_driver_commit() {
+    false
+}
