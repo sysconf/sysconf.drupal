@@ -270,8 +270,8 @@ HINT: provide --force to overwrite"
 # Start target if needed and run the given command inside
 #
 # Examples:
-#   sysconf-target attach lxc:container ps aux
-#   sysconf-target attach ssh:user@host "cd /some/path && ./server"
+#   sysconf-target attach lxc:container -- ps aux
+#   sysconf-target attach ssh:user@host -c "cd /some/path && ./server"
 #
 # It is a pure EXEC command:
 #   - return status code is the one that is returned by COMMAND
@@ -399,7 +399,7 @@ script_command_status() {
         if [ $_sysconf = YES ]; then
             (driver_${current_driver}_exec test -d /sysconf/.git) \
                 && local _git=YES || local _git=NO
-            nef_log "/sysconf is a Git-enabled: $_sysconf"
+            nef_log "/sysconf is Git-enabled: $_sysconf"
             if [ $nef_opt_show_verbose = yes ]; then
                 (driver_${current_driver}_exec -c "cd /sysconf && git log -1 | cat") \
                     | nef_log_pipe "Git HEAD:"
