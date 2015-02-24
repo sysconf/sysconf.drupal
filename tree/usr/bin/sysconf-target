@@ -1,8 +1,13 @@
 #!/bin/bash
 #
-# SYSCONF-target tool -- create/attach a target (such as machine/remote hosts)
+# SYSCONF-target tool -- init target system with sysconf or create/attach command
 #
-# Different drivers are supported, such as "lxc" and "ssh" (see the "drivers" command).
+# Different drivers are supported:
+#       ssh: connect to a SSH host
+#       lxc: create/start/attach a LXC container
+#
+# Run 'sysconf-target drivers -v' for full driver information.
+# Add -h or --help to any command for detailed information.
 #
 # EXAMPLES
 #     sysconf-target init   lxc:mycontainer /sysconf
@@ -260,7 +265,7 @@ HINT: provide --force to overwrite"
     nef_log "Done."
 }
 
-# command: attach <target> { -c <shell code> | [-- COMMAND ...]] }
+# command: attach <target> { -c <shell code> | [--] COMMAND ... }
 #
 # Start target if needed and run the given command inside
 #
@@ -483,6 +488,7 @@ script_command_help() {
 
     while [ -n "$1" ]; do
         case "$1" in
+            --usage) shift ;;
             -h) script_command_help help; return ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _command="$1"; break ;;

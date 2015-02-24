@@ -294,13 +294,11 @@ nef_show_help() {
                 if [ -n "$_command" ]; then
                     if [ "$_command" = "$_command_name" ]; then
                         echo "usage: $nef_command_callname $_command $_command_args"
-                        if [ $_usage -eq 0 ]; then
-                            _keep_showing=yes
-                            _ignore_blank=yes
-                            echo
-                            if [ -n "$_category" ]; then
-                                echo "$_category COMMAND:"
-                            fi
+                        _keep_showing=yes
+                        _ignore_blank=yes
+                        echo
+                        if [ -n "$_category" ]; then
+                            echo "$_category COMMAND:"
                         fi
                     fi
                 else
