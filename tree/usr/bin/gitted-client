@@ -1,19 +1,31 @@
 #!/bin/bash
 #
-# gitted-client: manage a Gitted target system like a Git repository
+# gitted-client: manage a Gitted target system like a Git repository -- http://gitted.net
 #
 # Gitted is a shell framework that turn a UNIX system into a Git repository
-# where the machine state is seen as a "Git working data" which can be
+# where the machine state is seen as a "Git work data" which can be
 # checked out/commited from/to Git branches (the "IO" branches).
 #
-# This client command provides 3 functionalities:
+# This command is the client that talks to the gitted server command
+# through sysconf-target. The client provides 3 functionalities:
+#
 #   - send Gitted commands to a target system (commit, reset, status)
 #   - forward Git push/pull to target (using the Git ext:: remote protocol)
 #   - integrate both for easy use from the "git" command (register)
 #
+# Add -h or --help to any command for detailed information.
+#
 ## HISTORY
 #    20140818 first version by JF Gigand <jf@geonef.fr>
 #    20150222 reconception around "IO commit" and partial rewrite using new sysconf-target
+## UNSURE:
+# Usage: gitted <target> <command> [...]
+#
+#   In this form, <command> is forwarded to the gitted command inside target,
+#   with any remaining argument after <target>, including options.
+#
+# Usage: gitted <command> [<target>] [...]
+#   Run
 ##
 
 nef_command_name=gitted-client
@@ -199,21 +211,14 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
     if [ $_enable_alias = yes -o $_enable_all = yes ]; then
         local _dir_spec=$_script_dir
         [ $_config = local ] && _dir_spec='$(git rev-parse --git-dir)'
-        # "${_git_config_cmd[@]}"
-pwd
-        # git config "--$_config" $_config_file \
-            # "alias.${_alias_name}" lala #"!${_dir_spec}/${nef_command_name}"
         _git_config_cmd "alias.${_alias_name}" "!${_dir_spec}/${nef_command_name}"
-        # "${_git_config_cmd[@]}" alias.gitted = ! /$nef_command_name
     fi
 
     if [ $_enable_url = yes -o $_enable_all = yes ]; then
         local _dir_spec=$_script_dir
         if [ $_config = local ]; then
-            # local $_dir="$PWD"
             cd $(git rev-parse --show-toplevel)
             local _dir_spec=$(git rev-parse --git-dir)
-            # cd "$_dir"
         fi
         _git_config_cmd "url.ext::${_dir_spec}/gitted-client %S .insteadOf" "${_url_scheme}:"
     fi
@@ -300,23 +305,37 @@ script_command_git-receive-pack() {
 ######################################################################
 # COMMANDS: OTHER
 
-# command: help [command]
+# command: help [<target>] [command]
 #
 # Print information about command usage.
 #
 # With no argument, a list of commands is printed.
+#
+# If <target> is provided, the "help" command is forwarded instead to the target
+# gitted server command with the remaining arguments.
+#
 ##
 script_command_help() {
+    local _server=no
     local _argv=()
     local _command=
-    local _usage=0
 
     while [ -n "$1" ]; do
         case "$1" in
-            --usage) _usage=1; shift ;;
+            --server) _server=yes; shift; break ;;
             -h|--help) script_command_help help; return ;;
             -*) script_eval_common_option "$1"; shift ;;
-            *) _command="$1"; break ;;
+            *)
+                local _arg="$1"
+                shift
+                if script_is_target_id $_arg; then
+                    script_target_exec "$_arg" gitted help "$@"
+                    return
+                else
+                    _command="$_arg"
+                    break
+                fi
+                ;;
         esac
     done
 
@@ -326,6 +345,9 @@ script_command_help() {
 ######################################################################
 # FUNCTIONALITY
 
+script_is_target_id() {
+    echo "$1" | grep -q :
+}
 script_target_exec() {
     local _target="$1"
     shift
@@ -401,7 +423,6 @@ script_parse_cmdline() {
         || nef_fatal "command ${script_command_name} failed with status $?"
     nef_log -v "Command returned successfully."
 }
-
 
 ######################################################################
 
