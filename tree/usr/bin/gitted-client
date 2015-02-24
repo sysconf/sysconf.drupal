@@ -6,7 +6,9 @@
 # where the machine state is seen as a "Git work data" which can be
 # checked out/commited from/to Git branches (the "IO" branches).
 #
-# This command is a only the client, which provides 3 functionalities:
+# This command is the client that talks to the gitted server command
+# through sysconf-target. The client provides 3 functionalities:
+#
 #   - send Gitted commands to a target system (commit, reset, status)
 #   - forward Git push/pull to target (using the Git ext:: remote protocol)
 #   - integrate both for easy use from the "git" command (register)
@@ -16,6 +18,14 @@
 ## HISTORY
 #    20140818 first version by JF Gigand <jf@geonef.fr>
 #    20150222 reconception around "IO commit" and partial rewrite using new sysconf-target
+## UNSURE:
+# Usage: gitted <target> <command> [...]
+#
+#   In this form, <command> is forwarded to the gitted command inside target,
+#   with any remaining argument after <target>, including options.
+#
+# Usage: gitted <command> [<target>] [...]
+#   Run
 ##
 
 nef_command_name=gitted-client
@@ -295,21 +305,37 @@ script_command_git-receive-pack() {
 ######################################################################
 # COMMANDS: OTHER
 
-# command: help [command]
+# command: help [<target>] [command]
 #
 # Print information about command usage.
 #
 # With no argument, a list of commands is printed.
+#
+# If <target> is provided, the "help" command is forwarded instead to the target
+# gitted server command with the remaining arguments.
+#
 ##
 script_command_help() {
+    local _server=no
     local _argv=()
     local _command=
 
     while [ -n "$1" ]; do
         case "$1" in
+            --server) _server=yes; shift; break ;;
             -h|--help) script_command_help help; return ;;
             -*) script_eval_common_option "$1"; shift ;;
-            *) _command="$1"; break ;;
+            *)
+                local _arg="$1"
+                shift
+                if script_is_target_id $_arg; then
+                    script_target_exec "$_arg" gitted help "$@"
+                    return
+                else
+                    _command="$_arg"
+                    break
+                fi
+                ;;
         esac
     done
 
@@ -319,6 +345,9 @@ script_command_help() {
 ######################################################################
 # FUNCTIONALITY
 
+script_is_target_id() {
+    echo "$1" | grep -q :
+}
 script_target_exec() {
     local _target="$1"
     shift
