@@ -160,10 +160,11 @@ nef_cmd()
 
 nef_fatal() {
     local _status=1
-
+    local _prefix="FATAL ERROR: "
     while [ "$1" != "" ]; do
         case "$1" in
             --status) _status="$2"; shift 2 ;;
+            --warn) _status=; _prefix="WARNING: "; shift ;;
             --) shift; break ;;
             -*) nef_log "nef_fatal(): bad option: $1"; shift ;;
             *) break ;;
@@ -171,9 +172,9 @@ nef_fatal() {
 
     done
 
-    nef_log "FATAL ERROR: $*"
+    nef_log "${_prefix}$*"
 
-    exit $_status;
+    [ -n "$_status" ] && exit $_status;
 }
 
 nef_fatal_usage() {
@@ -226,6 +227,14 @@ nef_command_merge_env() {
 # the doc comments "à la javadoc"
 #
 nef_show_help() {
+    local _usage_only=no
+    # while [ -n "$1" ]; do
+    #     case "$1" in
+    #         --usage) _usage_only=yes; shift ;;
+    #         --) shift; break ;;
+    #         *) break;
+    #     esac
+    # done
     local _command="$1"
     local _keep_showing=no
     local _prefix1="usage: $nef_command_callname"
@@ -294,12 +303,15 @@ nef_show_help() {
                 if [ -n "$_command" ]; then
                     if [ "$_command" = "$_command_name" ]; then
                         echo "usage: $nef_command_callname $_command $_command_args"
-                        _keep_showing=yes
-                        _ignore_blank=yes
-                        echo
-                        if [ -n "$_category" ]; then
-                            echo "$_category COMMAND:"
+                        if [ $_usage_only = yes ]; then
+                            break;
                         fi
+                            _keep_showing=yes
+                            _ignore_blank=yes
+                            echo
+                            if [ -n "$_category" ]; then
+                                echo "$_category COMMAND:"
+                            fi
                     fi
                 else
                     echo -e "    $_command_name\t$_command_args"
