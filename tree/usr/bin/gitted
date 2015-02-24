@@ -109,13 +109,18 @@ script_command_status() {
     if [ -z "$_view" ]; then
         [ "${#_argv[@]}" -eq 0 ] && _view=branches || _view=list
     fi
+    [ "${#_argv[@]}" -eq 0 ] && _argv=('*')
 
     script_return_status=yes # tell the caller not throw an error in case of non-null status
 
-    for _state_branch in $(script_expand_state_branches --usage-command status $_expand_opts -- "${_argv[@]}"); do
+    local _expanded_branches=$(script_expand_state_branches --usage-command status $_expand_opts -- "${_argv[@]}")
+    nef_log "Branches were expanded to:" $_expanded_branches
+    [ -z "$_expanded_branches" ] && return 1
+
+    for _state_branch in $_expanded_branches; do
         (
             # nef_log "branch: $_state_branch"
-            script_load_state_config $_state_branch
+            script_load_state_config $_state_branch || exit # terminate sub-shell
 
             export GITTED_CONFIG_DRIVER_ACTION=status
             export GITTED_CONFIG_STATUS_REPORT=$_view
@@ -127,9 +132,10 @@ script_command_status() {
                     local _sign=" "
                     case $_status in
                         0) _sign=" " ;;
-                        1) _sign=M ;;
-                        2) _sign=A ;;
-                        3) _sign=D ;;
+                        1) _sign=! ;;
+                        5) _sign=M ;;
+                        6) _sign=A ;;
+                        7) _sign=D ;;
                     esac
                     echo "$_sign $_state_branch"
                     ;;
@@ -508,19 +514,21 @@ script_command_git-hook-update() {
 # With no argument, a list of commands is printed.
 ##
 script_command_help() {
+    local _options=
     local _argv=()
     local _command=
 
     while [ -n "$1" ]; do
         case "$1" in
-            --usage) shift ;;
+            --usage) _options="$_options --usage" shift ;;
             -h) script_command_help help; return ;;
+            --) shift; _command="$1"; break ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _command="$1"; break ;;
         esac
     done
 
-    nef_show_help $_command
+    nef_show_help $_options $_command
 }
 
 # # command: git-remote-command <git-command>
@@ -563,7 +571,11 @@ script_command_help() {
 # a/b/**/suffix -> when "**" is encountered, the most specific driver
 #                   is identified (be it "a" or "a/b" or "a/b/c/d).
 #
-#       First, a physical list (a/b/*/suffix) is made, that will be merged with
+#       First, a list of (*/suffix) is made from state configs.
+#       In this list, each driver is called for a ref list.
+#       That list is filtered after the ending part (following the driver prefix).
+#
+#, that will be merged with
 #       the branch list of any driver within "a/b".
 #
 #       For each driver found, call the "list" command.
@@ -574,7 +586,6 @@ script_expand_state_branches() {
     local _usage_name=
     local _existing_only=no
     local _config
-    local _base=$GITTED_STATE_CONFIG_DIR/
     while [ -n "$1" ]; do
         case "$1" in
             --usage-command) _usage_name=$2; shift 2 ;;
@@ -585,39 +596,99 @@ script_expand_state_branches() {
     done
 
     while [ -n "$1" ]; do
-        # nef_fatal CHECK
+
         [[ "$1" =~ ^(([-a-zA-Z._]+|\*\*?)(/|$))+$ ]] \
-            || nef_fatal_usage_command "$_usage_name" "invalid <state branch> name: $1"
+            || nef_fatal_usage_command "$_usage_name" "invalid <state branch> pattern: $1"
 
-        # [[ "$1" =~ [a-zA-Z./-_*]+ ]] || nef_fatal "invalid <state branch> name: $1"
-
+        [[ "$1" =~ /$ ]] \
+            && nef_fatal_usage_command "$_usage_name" "invalid trailing slash for <state branch> pattern: $1"
 
         if [[ "$1" =~ \* ]]; then
 
-            if [[ "$1" =~ \*\* ]]; then    # branch has a "**": ignore existing branch altogether
+            local _branch=
 
-                nef_fatal "pattern not supported yet: '**'"
-                local _ifs="$IFS"; IFS=/;
-                local _comps=($1); IFS="$_ifs"
+            if [[ "$1" =~ \*\* ]]; then   ## branch has a "**": ignore existing branches altogether
 
-                # [ -d "${_base}$1" ] || nef_fatal "not a branch directory: $1"
-                # for _config in $(find ${_base}${1%/} -name '*.config'); do
-                #     local _branch=${_config:${#_base}}
-                #     _branch=${_branch%.config}
-                #     echo $_branch
-                # done
+                local _driver_branches=
+                local _pattern="${1//\*\*/*}"
+                local _ifs="$IFS"; IFS='*';
+                local _parts=($_pattern); IFS="$_ifs"
+                local _base=${_parts[0]}
 
-            else                # branch has a "*", not "**": doing file matching
+                local _driver_branch=$(script_driver_root_branch $_base)
+                # nef_log "Found driver branch: $_driver_branch"
+
+                if [ -n "$_driver_branch" ]; then
+                    ## $_base is below a driver domain: single driver
+
+                    _driver_branches="$_driver_branches $_driver_branch"
+                    ## local _nested=${_base#${_driver_branch}/};
+                    ## nef_log "Nested branch is: $_nested"
+                else
+                    ## $_base (before first '*') is not below a driver demain
+                    ## Which means we need a config search to grab all driver domains under $_base
+
+                    _configs=$(find $GITTED_STATE_CONFIG_DIR/$_base -name '*.config' -printf "%P\n")
+                    for _config in $_configs; do
+                        # nef_log "driver domain under: ${_base}${_config%.config}"
+                        _driver_branches="$_driver_branches ${_base}${_config%.config}"
+                    done
+
+                fi
+
+                local _regex="^${_pattern//\*/.+}$"
+                local _ok=
+
+                for _branch in $_driver_branches; do
+                    # nef_log "Expanding: $1: calling driver: $_branch"
+                    (
+                        script_load_state_config $_branch
+                        export GITTED_CONFIG_DRIVER_ACTION=list
+                        local _nested_branch=
+                        local _nested_branches=
+                        _nested_branches=$(script_call_driver)
+
+                        if  [ $? -eq 2 ]; then  ## exit code 2 means dirMode is disabled:
+
+                            [[ $_branch =~ $_regex ]] && echo $_branch
+                        else
+
+                            for _nested_branch in $_nested_branches; do
+
+                                _last_branch=${_branch}/${_nested_branch}
+                                if [[ $_last_branch =~ $_regex ]]; then
+                                    # nef_log "Expanding: $1: to branch: $_last_branch (included)"
+                                    echo $_last_branch
+                                    # else
+                                    # nef_log "Expanding: $1: to branch: $_last_branch (filtered out)"
+                                fi
+                            done
+                            [ -n "$_nested_branch" ]
+                        fi
+                        # nef_log "NOTICE: Driver returns no branch on: $_branch"
+                    )
+                    if [ $? -eq 0 ]; then
+                        _ok=yes
+                    fi
+                done
+
+                [ -z "$_ok" ] \
+                    && nef_fatal_usage_command "$_usage_name" "pattern does not match any branch: $1"
+
+
+            else  ## branch has a "*", not "**": match against refs/heads/ files
+
                 cd $GIT_DIR/refs/heads
-                local _branch=
-                for _branch in $(find -type f -path ./$1); do
+
+                # echo command: find -path "./$1" -type f >&2
+                for _branch in $(find -path "./$1" -type f); do
                     echo ${_branch#./}
                 done
                 [ -z "$_branch" ] && nef_fatal_usage_command "$_usage_name" "pattern does not match any branch: $1"
-                # $GIT_DIR/refs/heads/$1
             fi
 
-        else    # no "*" or "**" in branch: just checking --existing
+        else      ## no "*" or "**" in branch: just check --existing
+
             [ -d $GIT_DIR/refs/heads/$1 ] \
                 && nef_fatal_usage_command "$_usage_name" "branch is a directory: $1"
 
@@ -631,6 +702,35 @@ script_expand_state_branches() {
     done
 }
 
+# usage: script_driver_root_branch <state branch>
+#
+# Given any <state branch>, returns the branch which is configured for the driver
+# (removing the trailing part which is the "nested" (driver-managed) branch)
+script_driver_root_branch() {
+    local _ifs="$IFS"; IFS=/;
+    local _comps=($1); IFS="$_ifs"
+    local _path="$1"
+
+    # nef_log "Resolving branch: $1"
+
+    while [ "${#_comps[@]}" -gt 0 ]; do
+        local _ifs="$IFS"; IFS=/;
+        local _path="${_comps[*]}"; IFS="$_ifs"
+        local _configpath="$GITTED_STATE_CONFIG_DIR/${_path}.config"
+
+        if [ -r $_configpath ]; then
+            nef_log "Found config: $_configpath"
+            echo $_path
+            return
+        fi
+
+        local _to_remove=$(( ${#_comps[@]} - 1 ))
+        unset _comps[$_to_remove]
+    done
+
+    return 1
+}
+
 # usage: script_load_state_config_section <state branch>
 script_load_state_config() {
     local _branch=
@@ -640,7 +740,9 @@ script_load_state_config() {
     local _comps=($1); IFS="$_ifs"
 
     for _comp in "${_comps[@]}"; do
+
         _configpath=$GITTED_STATE_CONFIG_DIR/${_branch}/${_comp}.config
+
         [ -n "$_branch" ] && _branch=$_branch/$_comp || _branch=$_comp
         [ -n "$_subbranch" ] && _subbranch=$_subbranch/$_comp || _subbranch=$_comp
 
@@ -659,13 +761,15 @@ script_load_state_config() {
         fi
     done
 
-    [ -z "$GITTED_CONFIG_STATE_DRIVER" ] \
-        && nef_fatal "state branch is not configured: $1"
+    if [ -z "$GITTED_CONFIG_STATE_DRIVER" ]; then
+        nef_fatal --warn "state branch is not configured: $1"
+        return 1
+    else
+        script_driver_full_branch=$1
+        export GITTED_CONFIG_STATE_BRANCH=$_subbranch
 
-    script_driver_full_branch=$1
-    export GITTED_CONFIG_STATE_BRANCH=$_subbranch
-
-    nef_log -v "Loaded state branch: $script_driver_branch[/$_subbranch]"
+        nef_log -v "Loaded state branch: $script_driver_branch[/$_subbranch]"
+    fi
 }
 
 # usage: script_load_config_file <config file path>
@@ -686,7 +790,8 @@ script_load_config_file() {
         _ifs="$IFS"; IFS==
         _var=($_line)
         IFS="$_ifs"
-        _name="${_var[0]/./_}"
+        _name="${_var[0]//./_}"
+        _name="${_name//-/_}"
         _name="${_name^^}"
         _value="${_var[1]}"
 
@@ -704,6 +809,9 @@ script_call_driver() {
     [ "$nef_opt_show_debug" = yes ] && env | grep ^GITTED_CONFIG_
 
     $_driverpath
+    # _status=$?
+    # echo "driver status code: $_status" >&2
+    # return $_status
 }
 
 
@@ -753,8 +861,8 @@ nef_fatal_usage_command() {
     local _command="$1"; shift
 
     nef_log "$_command usage error: $*"
-    echo >&2
-    script_command_help --usage "$_command" >&2
+    # echo >&2
+    # script_command_help --usage "$_command" >&2
     exit 1
 }
 

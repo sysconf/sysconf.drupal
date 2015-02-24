@@ -45,3 +45,7 @@ gitted_driver_reset() {
 gitted_driver_commit() {
     false
 }
+
+gitted_driver_list() {
+    return 2 # by default, reports as non-dirMode
+}

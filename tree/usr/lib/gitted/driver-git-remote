@@ -3,8 +3,30 @@
 
 . /usr/share/gitted/shell-driver || exit 2
 
-gitted_driver_status_code() {
+driver_url="${GITTED_CONFIG_GIT_REMOTE_URL}"
+driver_remoterefs="${GITTED_CONFIG_GIT_REMOTE_REMOTEREFS:-refs/*}"
+driver_localrefs="${GITTED_CONFIG_GIT_REMOTE_LOCALREFS:-*}"
 
+# usage: echo "string(s)" | driver_rewrite "from" "to"
+driver_rewrite() {
+    local _from=${1//\//\\/}
+    local _to=${2//\//\\/}
+    echo running: sed -r "s/^${_backslahed/*/(.*)}$/${_backslahed/*/\1}/" >&2
+    sed -r "s/^${_backslahed/*/(.*)}$/${_backslahed/*/\1}/"
+}
+
+gitted_driver_list() {
+    git ls-remote "$driver_url" "$driver_remoterefs" \
+        | while read _uuid _ref; do
+
+        echo REF: $_ref >&2
+    done
+    # local _backslahed=${driver_remoterefs//\//\\/}
+    # local _sed_expr=s/^${_backslahed/*/(.*)}$//
+}
+
+gitted_driver_status_code() {
+    false
 }
 
 
