@@ -49,6 +49,7 @@ nef_log() {
     while [ "$1" != "" ]; do
 
         case "$1" in
+            -n) local NEF_LOG_NO_PREFIX=yes; shift ;;
             -p | --prepend) _opt_prepend="$2"; shift; shift ;;
             -v | --verbose) _opt_verbose=yes; shift ;;
             -d | --debug) _opt_debug=yes; shift ;;
