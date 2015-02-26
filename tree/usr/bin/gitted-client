@@ -18,14 +18,6 @@
 ## HISTORY
 #    20140818 first version by JF Gigand <jf@geonef.fr>
 #    20150222 reconception around "IO commit" and partial rewrite using new sysconf-target
-## UNSURE:
-# Usage: gitted <target> <command> [...]
-#
-#   In this form, <command> is forwarded to the gitted command inside target,
-#   with any remaining argument after <target>, including options.
-#
-# Usage: gitted <command> [<target>] [...]
-#   Run
 ##
 
 nef_command_name=gitted-client
@@ -42,7 +34,6 @@ if [ $? -ne 0 ]; then
 fi
 sysconf_target_script=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH which sysconf-target)
 
-
 ######################################################################
 # DEFAULTS
 
@@ -50,28 +41,59 @@ sysconf_target_script=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tr
 ######################################################################
 # COMMANDS: GITTED SERVER
 
-# command: status [[<target>] <io>]
+# command: status <target> [<state branches>] [--quiet | --branches | --list | --diff]
 #
-# Show status of target IO state
+# Show status of <state branches> inside target.
 ##
 script_command_status() {
-    true
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help status; return ;;
+            -*) script_eval_common_option "$1" --try || _argv=("${_argv[@]}" "$1"); shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    script_server_command status "${_argv[@]}"
 }
 
-# command: commit [[<target>] <io>...]       [-m <message>]
+
+# command: commit <target>  <state branches>  [-m <message>]
 #
-# Commit IO state to Git branch within target
+# Commit current state of <state branches> inside target.
 ##
 script_command_commit() {
-    true
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help status; return ;;
+            -*) script_eval_common_option "$1" --try || _argv=("${_argv[@]}" "$1"); shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    script_server_command commit "${_argv[@]}"
 }
 
-# command: reset  [<target>] <io> [commit]  [--soft] [--coming]
+# command: reset <target>  <state branches>  [--to <commit>] [<mode>]
 #
-# Reset target IO state to branch head or given commit
+# Reset current state of <state branches> inside target.
 ##
 script_command_reset() {
-    true
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help status; return ;;
+            -*) script_eval_common_option "$1" --try || _argv=("${_argv[@]}" "$1"); shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    script_server_command reset "${_argv[@]}"
 }
 
 
@@ -113,6 +135,7 @@ script_command_reset() {
 #
 # Available options:
 #
+#   --symbolic-link             Make symbolic links instead of copying
 #   --no-copy                   Do not copy the script, use the current location instead
 #                               (even if not appropriate)
 #   --script-dir <dir>          Path to directory where gitted-client is copied
@@ -132,6 +155,7 @@ script_command_register() {
     local _enable_url=no
     local _alias_name=ted
     local _url_scheme=gitted
+    local _cp_opts=
 
     while [ -n "$1" ]; do
         case "$1" in
@@ -141,6 +165,7 @@ script_command_register() {
             -f|--file) _config=file; _config_file="$2"; shift 2 ;;
 
             --no-copy) _no_copy=yes; shift ;;
+            --symbolic-link) _cp_opts="$_cp_opts -f -s"; shift ;;
             --script-dir) _script_dir="$2"; shift 2 ;;
             --force) _force=yes; shift ;;
 
@@ -168,8 +193,8 @@ script_command_register() {
 
 HINT: change to a Git directory or use --system, --global, --file or --no-copy" ;;
 
-            system) _script_dir=~/bin ;;
-            global) _script_dir=/usr/bin ;;
+            global) _script_dir=~/bin ;;
+            system) _script_dir=/usr/bin ;;
             file) nef_fatal "--file requires --script-dir or --no-copy" ;;
         esac
     fi
@@ -197,9 +222,9 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
         fi
     fi
     nef_log "Copy '$_source_script' to $_script_dir ..."
-    cp $_source_script $_script_dir/
-    cp "$sysconf_target_script" $_script_dir
-    cp "$lib_shell_command_path" $_script_dir
+    cp $_cp_opts $_source_script $_script_dir/
+    cp $_cp_opts "$sysconf_target_script" $_script_dir
+    cp $_cp_opts "$lib_shell_command_path" $_script_dir
 
     # Setup Git config
     _git_config_cmd() {
@@ -316,6 +341,7 @@ script_command_git-receive-pack() {
 #
 ##
 script_command_help() {
+    # local truy
     local _server=no
     local _argv=()
     local _command=
@@ -340,14 +366,27 @@ script_command_help() {
     done
 
     nef_show_help $_command
+
+    case "$_command" in
+        status|commit|reset)
+            cat <<EOF
+
+This is a SERVER COMMAND whose arguments are forward to the server "gitted" command.
+
+For the full help from the server, run: $nef_command_name help <target> $_command
+EOF
+            # script_server_command
+            ;;
+    esac
 }
 
 ######################################################################
 # FUNCTIONALITY
 
 script_is_target_id() {
-    echo "$1" | grep -q :
+    [[ "$1" =~ : ]]
 }
+
 script_target_exec() {
     local _target="$1"
     shift
@@ -360,6 +399,27 @@ script_target_exec() {
     exec "$sysconf_target_script" attach $_target -- "$@"
 
     nef_fatal "sysconf-target failed with status: $?"
+}
+
+script_server_command() {
+    local _command="$1"; shift
+    local _target=
+
+    [ -z "$1" ] \
+        && nef_fatal_usage_command "$_command" "missing target argument"
+
+    if script_is_target_id "$1"; then
+        _target="$1"
+        shift
+    else
+        nef_fatal_usage_command "$_command" "not a target ref: $1"
+        # # target must be resolved
+        # . "$(git --exec-path)/git-parse-remote"
+        # local _remote=$(get_default_remote)
+        # local _url=$(git config --get "remote.$_remote.remote")
+        # # nef_fatal_usage_command "$1" "$(error_on_missing_default_upstream)"
+    fi
+    script_target_exec "$_target" gitted "$_command" "$@"
 }
 
 
@@ -376,17 +436,8 @@ script_eval_common_option() {
         -v | --verbose) nef_opt_show_verbose=yes; shift ;;
         -vv | --debug-verbose) nef_opt_show_verbose=yes; nef_opt_show_debug=yes; shift ;;
         -h | --help) nef_show_usage; exit 0 ;;
-        -*) nef_fatal "bad option: $1, use -h for usage information" ;;
+        -*) [ "$2" != "--try" ] && nef_fatal "bad option: $1, use -h for usage information" ;;
     esac
-}
-
-nef_fatal_usage_command() {
-    local _command="$1"; shift
-
-    nef_log "$_command usage error: $*"
-    echo >&2
-    script_command_help --usage "$_command" >&2
-    exit 1
 }
 
 script_parse_cmdline() {
