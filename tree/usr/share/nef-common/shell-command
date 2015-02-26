@@ -191,7 +191,12 @@ nef_fatal_usage() {
     # nef_show_usage
     exit 1;
 }
+nef_fatal_usage_command() {
+    local _command="$1"; shift
 
+    nef_log "$_command usage error (try: $_command -h): $*"
+    exit 1
+}
 nef_show_usage() {
     local _usage_command=${nef_command_prefix}_usage
 
