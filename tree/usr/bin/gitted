@@ -172,7 +172,15 @@ script_command_status() {
 
             return $_status
 
-        ) || _global_status=1
+        )
+        local _last_status=$?
+        if [ $_global_status = 0 ]; then
+            _global_status=$_last_status
+        elif [ $_global_status != $_last_status ]; then
+            if [ $_global_status != 1 ]; then
+                _global_status=5
+            fi
+        fi
     done
 
     return $_global_status
