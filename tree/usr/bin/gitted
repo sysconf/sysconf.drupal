@@ -37,6 +37,9 @@ export GITTED_REF_PREFIX=refs/heads/
 export GITTED_DRIVER_PREFIX_PATH=/usr/lib/gitted/driver-
 export GITTED_NULL_SHA1=0000000000000000000000000000000000000000
 
+# [ -z "$USER" ] && export USER=
+[ -z "$HOME" ] && export HOME=~
+
 NEF_LOG_NO_PREFIX=yes
 
 ######################################################################
