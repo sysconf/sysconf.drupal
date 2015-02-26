@@ -19,17 +19,6 @@ state_ref=$(gitted_state_ref_name mysql)
 # 0=has new ops
 new_ops=0
 
-_psql() {
-    sudo -u postgres psql \
-        -X \
-        --pset border=0 --pset format=unaligned --pset tuples_only \
-        "$@" \
-        || nef_fatal "psql failed with status $? with args: $*"
-}
-
-_pg_dump() {
-    sudo -u postgres pg_dump "$@"
-}
 
 oplog_last_time=$(ls -gGt --time-style=+%s /var/lib/mysql/$GITTED_MYSQL_DATABASE | tail -n +2 | head -n 1 | awk '{ print $4 }')
 

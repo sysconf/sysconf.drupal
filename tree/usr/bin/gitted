@@ -28,20 +28,21 @@ nef_command_prefix=script_command
 script_dir=$(dirname $(readlink -f $0))
 PATH=$script_dir:$script_dir/../share/nef-common:$script_dir/../../../../sysconf.base/tree/usr/share/nef-common:/usr/share/nef-common . shell-command || exit 2
 
-
 ######################################################################
 # DEFAULTS AND FUNCTIONS
 
-# Path of local GIT repository
 export GIT_DIR=/local.repository.git
 export GITTED_STATE_CONFIG_DIR=/etc/gitted/state
+export GITTED_REF_PREFIX=refs/heads/
 export GITTED_DRIVER_PREFIX_PATH=/usr/lib/gitted/driver-
+export GITTED_NULL_SHA1=0000000000000000000000000000000000000000
 
+NEF_LOG_NO_PREFIX=yes
 
 ######################################################################
 # COMMANDS: WORK STATE
 
-# command: status [<state branch> ...] [--quiet | --branches | --list | --diff]
+# command: status [<state branches>] [--quiet | --branches | --list | --diff]
 #
 # Show status of configured state branch(es) with different verbosity levels
 #
@@ -51,25 +52,37 @@ export GITTED_DRIVER_PREFIX_PATH=/usr/lib/gitted/driver-
 # Giving no <state branch> expands to all branches from configuration (or all
 # branches in Git's refs/heads/ if --existing is set).
 #
-# Any <state branch>/ (ending with a slash) is expanded to its nested state
-# branches. The slash is mandatory: omitting it will trigger an error.
+# Each <state branch> may contain "*" or "**" wildcards, causing wildcard
+# expansion to be performed:
+#
+#   "*"   Where present, a single-star will match one or more directory components
+#         through the existing refs in the repository refs/heads/.
+#         Ex: "*/sysconf" will match both "state/sysconf" and "state/sub/sysconf".
+#
+#   "**"  A double-star acts like a single-star except it will match branches against
+#         the configuration instead of the existing refs. This is the recommanded
+#         method to list the "logical branches" from /etc/gitted/state.
+#
+#         Additionally, the double-star expansion will recurse into "driver domains"
+#         where a config defines a *directory* of branches whose list if defined
+#         by the driver (behaving like UNIX mounts).
 #
 # Options can be given at any position:
 #
-#   --quiet
+#   --quiet     (or -vq)
 #               Do not ouput anything, just return status code 0 if clean, 1 if dirty
 #
-#   --branches
+#   --branches  (or -vb)
 #               Print the list of branches with a status letter like 'git status'
 #               does: (space)/M/A/D for (clean/edited/added/deleted).
 #               This is the default with no <state branch> is given.
 #
-#   --list
+#   --list      (or -vl)
 #               List state-level differences from branch to working state, in a
 #               format similar to 'git status --porcelain'.
 #               This is the default when <state branch> is given.
 #
-#   --diff
+#   --diff      (or -vd)
 #               Show full differences from branch to work state. The format
 #               will vary across drivers, be it like 'git diff' or whatever.
 #               Some drivers won't support it and will print a --list instead.
@@ -87,18 +100,18 @@ script_command_status() {
 
     while [ -n "$1" ]; do
         case "$1" in
-            --quiet) [ -n "$_view" ] \
-                && nef_fatal_usage_command status "--quiet conflicts with --$_view"
-                _view=quiet; shift ;;
-            --branches) [ -n "$_view" ] \
-                && nef_fatal_usage_command status "--branches conflicts with --$_view"
-                _view=branches; shift ;;
-            --list) [ -n "$_view" ] \
-                && nef_fatal_usage_command status "--list conflicts with --$_view"
-                _view=list; shift ;;
-            --diff) [ -n "$_view" ] \
-                && nef_fatal_usage_command status "--diff conflicts with --$_view"
-                _view=diff; shift ;;
+            --quiet | --branches | --list | --diff)
+                [ -n "$_view" ] \
+                    && nef_fatal_usage_command status "$1 conflicts with --$_view"
+                _view=${1#--};
+                shift
+                ;;
+            -vq | -vb | -vl | -vd)
+                [ -n "$_view" ] \
+                    && nef_fatal_usage_command status "$1 conflicts with --$_view"
+                case $1 in -vq) _view=quiet ;; -vb) _view=branches ;; -vl) __view=list ;; -vd) _view=diff ;; esac
+                shift
+                ;;
             # --existing) _expand_opts="$_expand_opts --existing"; shift ;;
             -h|--help) script_command_help status; return ;;
             -*) script_eval_common_option "$1"; shift ;;
@@ -109,13 +122,16 @@ script_command_status() {
     if [ -z "$_view" ]; then
         [ "${#_argv[@]}" -eq 0 ] && _view=branches || _view=list
     fi
-    [ "${#_argv[@]}" -eq 0 ] && _argv=('*')
+    [ "${#_argv[@]}" -eq 0 ] && _argv=('**')
 
     script_return_status=yes # tell the caller not throw an error in case of non-null status
 
     local _expanded_branches=$(script_expand_state_branches --usage-command status $_expand_opts -- "${_argv[@]}")
-    nef_log "Branches were expanded to:" $_expanded_branches
     [ -z "$_expanded_branches" ] && return 1
+
+    [ "$_view" = branches ] && echo "## Status of state branches"
+    local _output
+    local _global_status=0
 
     for _state_branch in $_expanded_branches; do
         (
@@ -125,31 +141,43 @@ script_command_status() {
             export GITTED_CONFIG_DRIVER_ACTION=status
             export GITTED_CONFIG_STATUS_REPORT=$_view
 
-            script_call_driver
+            _output=$(script_call_driver)
             local _status=$?
-            case $_view in
-                branches)
-                    local _sign=" "
-                    case $_status in
-                        0) _sign=" " ;;
-                        1) _sign=! ;;
-                        5) _sign=M ;;
-                        6) _sign=A ;;
-                        7) _sign=D ;;
-                    esac
-                    echo "$_sign $_state_branch"
-                    ;;
-                list | diff)
-                    ;;
-            esac
-            exit $_status
-        )
+            if [ $_view != quiet ]; then
+                local _sign=" "
+                case $_status in
+                    0) _sign=" " ;;
+                    1) _sign=! ;;
+                    5) _sign=M ;;
+                    6) _sign=A ;;
+                    7) _sign=D ;;
+                esac
+                echo "$_sign $_state_branch"
+
+                if [ $_view != branches ]; then
+                    if [ -n "$_output" ]; then
+                        local _label=$(script_format_commit_label $GITTED_CONFIG_STATE_COMMIT)
+                        echo -e "  |\n  | Head commit: ${_label:-(none)}"
+                        echo -n -e "  | "
+                        echo "${_output//
+/
+  | }"
+                    fi
+                    echo
+                fi
+            fi
+
+            return $_status
+
+        ) || _global_status=1
     done
+
+    return $_global_status
 }
 
-# command: commit [<state branch> ...] [-m <message>]
+# command: commit  <state branches>  [-m <message>]
 #
-# Commit state from driver to Git branch
+# Commit state from driver(s) to the Git branch(es)
 #
 # For each <state branch> provided, request the driver to turn the present state
 # into a Git commit and update the branch in /local.repository.git/refs/heads/.
@@ -157,12 +185,20 @@ script_command_status() {
 # Depending on the driver, the state can be a live database, a local directory,
 # rotated logs, etc.
 #
-# Giving no <state branch> expands to all branches from configuration (or all
-# branches in Git's refs/heads/ if --existing is set).
+# Each <state branch> may contain "*" or "**" wildcards, causing wildcard
+# expansion to be performed:
 #
-# Any <state branch>/ (ending with a slash) is expanded to its nested branches.
-# The slash is mandatory: omitting it triggers an error, to prevent recursion
-# from happening by mistake.
+#   "*"   Where present, a single-star will match one or more directory components
+#         through the existing refs in the repository refs/heads/.
+#         Ex: "*/sysconf" will match both "state/sysconf" and "state/sub/sysconf".
+#
+#   "**"  A double-star acts like a single-star except it will match branches against
+#         the configuration instead of the existing refs. This is the recommanded
+#         method to "commit all" from /etc/gitted/state, by doing: commit '**'
+#
+#         Additionally, the double-star expansion will recurse into "driver domains"
+#         where a config defines a *directory* of branches whose list if defined
+#         by the driver (behaving like UNIX mounts).
 #
 # All branches are updated in an atomic all-or-none operation: if any commit
 # fails, the command fails too and no branch is updated, even if some commits
@@ -170,10 +206,11 @@ script_command_status() {
 #
 # git-commit(1)-like options:
 #
-#   -m <message>
-#               Set commit message (like 'git commit -m'). The same message
-#               is used to commit each <state branch>. To use a different message,
-#               run 'gitted commit -m' on each branch with a specific message.
+#   --message <msg>, -m <msg>
+#               Use the given <msg> as the commit message (like 'git commit -m').
+#               The same message is used to commit each <state branch>. To use a
+#               different message, run 'gitted commit -m' on each branch with a
+#               specific message.
 #
 #   --author <author>
 #               Override the author as specified in the state branch
@@ -186,8 +223,7 @@ script_command_status() {
 #
 #   --existing
 #               Never create a branch which does not exist already in Git,
-#               fails with error instead. Slash-expansion (<state branch>/)
-#               is restricted to existing .git/refs/heads/ branches.
+#               fails with error instead.
 ##
 # Not implemented:
 #
@@ -202,6 +238,7 @@ script_command_commit() {
     local _msg=
     local _author=
     local _allow_empty=false
+    local _existing=no
     local _argv=()
 
     while [ -n "$1" ]; do
@@ -209,35 +246,83 @@ script_command_commit() {
             -m) _msg="$2"; shift 2 ;;
             --author) _author="$2"; shift 2 ;;
             --allow-empty) _allow_empty=true; shift ;;
+            --existing) _existing=yes; shift ;;
             -h|--help) script_command_help commit; return ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
     done
 
-    for _state_branch in $(script_expand_state_branches $_expand_opts -- "${_argv[@]}"); do
+    [ "${#_argv[@]}" -eq 0 ] && nef_fatal_usage_command commit "too few arguments"
+
+    script_return_status=yes # tell the caller not throw an error in case of non-null status
+
+    local _expanded_branches=$(script_expand_state_branches --usage-command status $_expand_opts -- "${_argv[@]}")
+    [ -z "$_expanded_branches" ] && return 1
+
+    local _tmp_ref=$(script_make_ref_date_prefix).commit
+    local i=0
+
+    for _state_branch in $_expanded_branches; do
         (
             # nef_log "branch: $_state_branch"
-            script_load_state_config $_state_branch
+            script_load_state_config $_state_branch || exit # terminate sub-shell
+            nef_log "Comitting branch [$GITTED_CONFIG_STATE_DRIVER]: $_state_branch ..."
 
             export GITTED_CONFIG_DRIVER_ACTION=commit
             export GITTED_CONFIG_COMMIT_MESSAGE=$_msg
             export GITTED_CONFIG_COMMIT_AUTHOR=$_author
             export GITTED_CONFIG_COMMIT_ALLOW_EMPTY=$_allow_empty
 
-            script_call_driver
-        ) || nef_fatal "state branch failed to be commited: $_state_branch"
+            local _commit
+            _commit=$(script_call_driver)
+            local _status=$?
+            if [ $_status -eq 0 ]; then
+                [ -n "$_commit" ] || nef_fatal "driver commit returned 0 but commit SHA1 not printed
+"
+                echo "[${_state_branch} ${_commit:0:7}] Commit OK"
+                git update-ref $_tmp_ref/$_state_branch "$_commit"
+
+            elif [ $_status -eq 2 ]; then
+                nef_log "WARN: driver had nothing to commit"
+            else
+                nef_fatal "driver $GITTED_CONFIG_STATE_DRIVER [$script_driver_branch] failed to commit: $_state_branch"
+            fi
+
+        ) || exit $? #nef_fatal "state branch failed to be commited: $_state_branch"
     done
 
-    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command commit "too many arguments"
+    local _count=$(find $GIT_DIR/$_tmp_ref -type f 2>/dev/null | wc -w)
+    nef_log
+
+    if [ $_count -gt 0 ]; then
+        nef_log "$_count commit(s) made successfully. Updating refs..."
+        # nef_log " src: $GIT_DIR/$_tmp_ref/*"
+        # nef_log "dest: $GIT_DIR/$GITTED_REF_PREFIX"
+        cp -r $GIT_DIR/$_tmp_ref/* $GIT_DIR/$GITTED_REF_PREFIX \
+            || nef_fatal "failed to copy the refs from: $GIT_DIR/$_tmp_ref/*"
+        rm -rf $GIT_DIR/$_tmp_ref
+        nef_log "Done."
+    else
+        nef_log "No commit happened actually."
+        exit 2
+    fi
 }
 
-# command: reset  <state branch> {HEAD | <commit> | --coming}  [<mode>]
+# command: reset  <state branches>  [--to <commit>] [<mode>]
 #
 # Reset the work state of <state branch> to the state of given Git commit
 #
 # Works like git-reset(1) except there is no staging index. The Git "working tree" is
 # like the Gitted "working state" whose type depend on the driver (sysconf, mysql, etc.).
+#
+# When --to <commit> is used, <state branches> must expand to a single branch
+# which is updated to point to <commit>. If <mode> is different from --soft,
+# an attempt is made to update the working state to <commit>, behaving according
+# to <mode> like explained below.
+#
+# Otherwise, all ch *working state* of each <state branches> is reset to the state
+# where it was at the time of
 #
 # <state branch> is reset to <commit> (if not HEAD) and <mode> tells what to do
 # with the working state. If <mode> is omitted, defaults to "--keep".
@@ -245,9 +330,9 @@ script_command_commit() {
 # --coming changes the behaviour: nothing is done yet but options are remembered
 # for a later git-push operation that implies <state branch>. Indeed, any push
 # operation on a <state branch> also triggers a "gitted reset" through the
-# "update" hook in order to keep
+# "update" hook in order to keep it in sync.
 #
-# The <mode> must be one of the following:
+# The <mode> must be one of the following, or defaults to --keep:
 #
 #   --soft
 #       Do not update the working state, update Git branch ref only.
@@ -284,6 +369,11 @@ script_command_commit() {
 #
 #       Use with --coming to make the next push on <state branch> "smarter", by
 #       trying to merge the push instead of rejecting it in case of "dirty state".
+#
+# Options can be given at any position:
+#
+#   --to <commit>
+#       Reset branch working state to <commit> instead of
 ##
 # Not implemented:
 #
@@ -293,16 +383,110 @@ script_command_commit() {
 ##
 script_command_reset() {
     local _argv=()
+    local _mode=
+    local _to=
 
     while [ -n "$1" ]; do
         case "$1" in
+            --soft | --hard | --keep | --merge)
+                [ -n "$_mode" ] \
+                    && nef_fatal_usage_command reset "$1 is incompatible with --$_mode";
+                _mode=${1#--}; shift ;;
+            --to) _to="$2"; shift 2 ;;
             -h|--help) script_command_help reset; return ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
     done
 
-    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command reset "too many arguments"
+    [ -z "$_mode" ] && _mode=keep
+
+    [ "${#_argv[@]}" -eq 0 ] && nef_fatal_usage_command commit "too few arguments"
+
+    script_return_status=yes # tell the caller not throw an error in case of non-null status
+
+    local _commit=
+    if [ -n "$_to" ]; then
+        _commit=$(git rev-parse --verify "$_to") \
+            || nef_fatal_usage_command reset "invalid --to <commit> argument: $_to"
+    fi
+
+    local _expanded_branches=$(script_expand_state_branches --usage-command status $_expand_opts -- "${_argv[@]}")
+    [ -z "$_expanded_branches" ] && return 1
+
+    local _tmp_ref=$(script_make_ref_date_prefix).commit
+    local i=0
+    for _state_branch in $_expanded_branches; do
+        (
+            # nef_log "branch: $_state_branch"
+            script_load_state_config $_state_branch || exit # terminate sub-shell
+
+            if [ -n "$_commit" ]; then
+                if [ $_commit = $GITTED_CONFIG_STATE_COMMIT ]; then
+                    nef_fatal "branch $_state_branch is already at commit: $(script_format_commit_label $_to)"
+                fi
+                nef_log "Resetting branch [$GITTED_CONFIG_STATE_DRIVER]: $_state_branch ... to: $_commit"
+
+            else  # just act on working state, branch does not change
+                [ $_mode != hard ] \
+                    && nef_fatal_usage_command reset "without --to, --hard is mandatory"
+
+                nef_log "Resetting branch state [$GITTED_CONFIG_STATE_DRIVER]: $_state_branch"
+                _commit=$GITTED_CONFIG_STATE_COMMIT
+            fi
+
+            local _ok=yes
+
+            if [ $_mode != soft ]; then
+                local _msgp="driver $GITTED_CONFIG_STATE_DRIVER [$script_driver_branch]"
+
+                export GITTED_CONFIG_DRIVER_ACTION=reset
+                export GITTED_CONFIG_RESET_MODE=$_mode
+                export GITTED_CONFIG_RESET_COMMIT=$_commit
+
+                script_call_driver
+                local _status=$?
+                case $_status in
+
+                    0) # success
+                        ;;
+                    # 2)
+                    #     nef_log "WARN: driver had nothing to reset"
+                    #     _ok=no
+                    #     ;;
+                    *)
+                        nef_log "WARN: $_msgp failed to reset: $_state_branch"
+                        _ok=no
+                        # exit 1
+                        ;;
+                esac
+            fi
+
+            if [ $_ok = yes ]; then
+                echo "[${_state_branch} ${_commit:0:7}] Reset OK to: $(script_format_commit_label $_commit)"
+                if [ $_commit != $GITTED_CONFIG_STATE_COMMIT ]; then
+                    git update-ref ${GITTED_REF_PREFIX}$_state_branch "$_commit"
+                fi
+            fi
+
+        ) || exit $? #nef_fatal "state branch failed to be reset: $_state_branch"
+        (( i++ ))
+    done
+
+    if [ $i -gt 0 ]; then
+        test -n ""
+        # nef_log "$i branch(es) were reset successfully."
+        # nef_log " src: $GIT_DIR/$_tmp_ref/*"
+        # nef_log "dest: $GIT_DIR/$GITTED_REF_PREFIX"
+        # cp -r $GIT_DIR/$_tmp_ref/* $GIT_DIR/$GITTED_REF_PREFIX \
+        #     || nef_fatal "failed to copy the refs from: $GIT_DIR/$_tmp_ref/*"
+        # rm -rf $GIT_DIR/$_tmp_ref
+        # nef_log "Done."
+    else
+        nef_log
+        nef_log "No reset happened actually."
+        exit 2
+    fi
 }
 
 ######################################################################
@@ -564,6 +748,11 @@ script_command_help() {
 ######################################################################
 # INTERNAL FUNCTIONALITY
 
+script_make_ref_date_prefix() {
+    local _prefix=$(date +%Y%m%d-%H%M%S%N)
+    echo refs/gitted/transaction/${_prefix:0:-6}
+}
+
 #
 # some/branch   -> left untouched
 # dir/*         -> "*" is expanded to all descendants that exist PHYSICALLY
@@ -719,7 +908,7 @@ script_driver_root_branch() {
         local _configpath="$GITTED_STATE_CONFIG_DIR/${_path}.config"
 
         if [ -r $_configpath ]; then
-            nef_log "Found config: $_configpath"
+            nef_log -d "Found config: $_configpath"
             echo $_path
             return
         fi
@@ -766,7 +955,13 @@ script_load_state_config() {
         return 1
     else
         script_driver_full_branch=$1
+        local _subbranch_uc=${_subbranch^^}; _subbranch_uc=${_subbranch_uc//\//_}
+        local _value=$(git show-ref --hash ${GITTED_REF_PREFIX}$_branch)
+
+        # gitted_state_branch=$_branch
         export GITTED_CONFIG_STATE_BRANCH=$_subbranch
+        export GITTED_CONFIG_STATE_BRANCH_UC=${_subbranch_uc//-/_}
+        export GITTED_CONFIG_STATE_COMMIT=${_value:-$GITTED_NULL_SHA1}
 
         nef_log -v "Loaded state branch: $script_driver_branch[/$_subbranch]"
     fi
@@ -786,10 +981,10 @@ script_load_config_file() {
     local _ifs="$IFS"; IFS=$'\n'
     _lines=($(git config --file "$_configpath" -l )); IFS="$_ifs"
 
+    set -f
     for _line in "${_lines[@]}"; do
         _ifs="$IFS"; IFS==
-        _var=($_line)
-        IFS="$_ifs"
+        _var=($_line); IFS="$_ifs"
         _name="${_var[0]//./_}"
         _name="${_name//-/_}"
         _name="${_name^^}"
@@ -798,6 +993,7 @@ script_load_config_file() {
         nef_log -d "Exporting variable: GITTED_${_name}=\"${_value}\""
         eval "export GITTED_CONFIG_${_name}=\"${_value}\""
     done
+    set +f
 }
 
 script_call_driver() {
@@ -805,40 +1001,15 @@ script_call_driver() {
 
     [ -x $_driverpath ] || nef_fatal "invalid driver: $GITTED_CONFIG_STATE_DRIVER"
 
-    nef_log -v "Running driver: $_driverpath"
+    nef_log -v "Running driver [$GITTED_CONFIG_DRIVER_ACTION]: $_driverpath"
     [ "$nef_opt_show_debug" = yes ] && env | grep ^GITTED_CONFIG_
 
     $_driverpath
-    # _status=$?
-    # echo "driver status code: $_status" >&2
-    # return $_status
 }
 
-
-# # usage: script_run_git_script { import | export }
-# script_run_git_script() {
-#     op=$1
-#     for script in /etc/gitted/sync/*.$op; do
-#         name=$(basename $script)
-#         export GITTED_GIT_BRANCH=$(echo $name | sed 's/\..*//')
-#         if [ "$name" = "$GITTED_GIT_BRANCH.$op" ]; then
-#             $script 2>&1 | nef_log_pipe # "<$name>"
-#         fi
-#     done
-# }
-
-# # usage: script_run_hooks <hook-name>
-# script_run_hooks() {
-#     local _name=$1
-#     local _dir=/etc/gitted/hook/${_name}.d
-
-#     if [ -d $_dir ]; then
-#         for hook in $(find $_dir -executable -and -not -type d); do
-#             $hook 2>&1 | nef_log_pipe "${hook}:"
-#         done
-#     fi
-# }
-
+script_format_commit_label() {
+    git log -1 --pretty=format:"[%h] %ar, by %cn -- %s" $1 2>/dev/null
+}
 
 ######################################################################
 # COMMAND LINE & RUN
@@ -860,7 +1031,7 @@ script_eval_common_option() {
 nef_fatal_usage_command() {
     local _command="$1"; shift
 
-    nef_log "$_command usage error: $*"
+    nef_log "$_command usage error (try: $_command -h): $*"
     # echo >&2
     # script_command_help --usage "$_command" >&2
     exit 1
@@ -901,6 +1072,7 @@ script_parse_cmdline() {
             nef_log -v "command ${script_command_name} returned status $_status"
         fi
     fi
+    return $_status
 }
 
 ######################################################################

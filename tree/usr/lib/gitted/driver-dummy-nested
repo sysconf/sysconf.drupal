@@ -15,7 +15,7 @@ gitted_driver_status_code() {
 
     local _status=$GITTED_CONFIG_DUMMY_STATUS
     if [ -n "$GITTED_CONFIG_STATE_BRANCH" ]; then
-        local _var=GITTED_CONFIG_DUMMY_${GITTED_CONFIG_STATE_BRANCH^^}_STATUS; _var=${_var//-/_}
+        local _var=GITTED_CONFIG_DUMMY_${GITTED_CONFIG_STATE_BRANCH_UC}_STATUS
         # echo "dummy var = $_var" >&2
         if [ -n "${!_var}" ]; then
             _status=${!_var}
@@ -26,6 +26,9 @@ gitted_driver_status_code() {
     return $_status
 }
 
+gitted_driver_commit() {
+    return 2 # nothing to commit
+}
 
 
 gitted_driver_run "$@"
