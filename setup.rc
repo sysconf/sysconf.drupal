@@ -36,7 +36,6 @@ sysconf_require_packages git curl sudo
 # Setup the GIT repository, heart of gitted
 in_private_repos=/local.repository.git
 if [ ! -d $in_private_repos ]; then
-    echo "Initializing repository: $in_private_repos"
     _opts=""
 
     # /origin.repository.git may have been shared by the host.
@@ -45,6 +44,5 @@ if [ ! -d $in_private_repos ]; then
 
     git init --bare $_opts $in_private_repos
 
-    echo "Comitting state to Gitted..."
     gitted commit '**'
 fi
