@@ -548,6 +548,7 @@ driver_ssh_exec() {
 
     while [ -n "$1" ]; do
         case "$1" in
+            --hybrid) shift ;;
             -c) _argv=("${_argv[@]}" $2); shift 2 ;;
             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
@@ -561,6 +562,7 @@ driver_ssh_exec() {
 # DRIVER: dockerfile
 
 driver_dockerfile_load() {
+    $current_driver_local=yes
     current_driver_sysconf_update=no
     driver_dockerfile_dir=$current_target_id
 }
@@ -610,7 +612,7 @@ driver_dockerfile_exec() {
     done
 
     [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
-    [ $_hybrid = no ] && [ $current_driver_local = yes ] \
+    [ $_hybrid = no ] \
         && nef_fatal "target command will not be runned in the local system: ${_argv[@]}"
 
     cd $driver_dockerfile_dir
@@ -747,6 +749,7 @@ driver_lxc_exec() {
 
     while [ -n "$1" ]; do
         case "$1" in
+            --hybrid) shift ;;
             -c) _sh_c=yes; shift ;;
             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
