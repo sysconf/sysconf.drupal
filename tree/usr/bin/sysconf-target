@@ -204,7 +204,7 @@ HINT: run 'git status' and 'git commit' to save changes, or pass --git-ignore-ch
         if [ -f ~/.ssh/id_dsa.pub ]; then
             nef_log "copy ~/.ssh/id_dsa.pub to ${current_target}:/root/.ssh/authorized_keys"
             cat ~/.ssh/id_dsa.pub | driver_${current_driver}_exec --hybrid \
-                -c "mkdir -p /root/.ssh && cat >>${current_prefix}/root/.ssh/authorized_keys"
+                -c "mkdir -p ${current_prefix}/root/.ssh && cat >>${current_prefix}/root/.ssh/authorized_keys"
         fi
     fi
 
@@ -587,7 +587,7 @@ driver_dockerfile_create() {
         nef_log "Container exists already, not creating: $_dockerfile"
         return 1
     else
-        mkdir -p "$driver_dockerfile_dir"
+        mkdir -p "$driver_dockerfile_dir/root"
         local distrib=$(echo $script_init_distrib | cut -d: -f1)
         local release=$(echo $script_init_distrib | cut -d: -f2)
         [ -n "$release" ] && distrib=${distrib}:${release}
@@ -597,6 +597,7 @@ FROM ${distrib}
 MAINTAINER Sysconf <sysconf@gitted.net>
 
 ADD sysconf/ /
+ADD root/ /
 RUN /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update
 CMD ["/sbin/init", "3"]
 EOF
