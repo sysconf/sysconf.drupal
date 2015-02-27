@@ -257,7 +257,7 @@ HINT: provide --force to overwrite"
             rm -rf "$_to_rm"
         fi
 
-        if [ "$_no_setup" = no -a "$current_driver_sysconf_update" != no ]; then
+        if [ "$_no_setup" = no -a "$current_driver_local" != yes ]; then
             nef_log "Setting up sysconf in target..."
             (driver_${current_driver}_exec /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update)
         fi
@@ -296,12 +296,14 @@ script_command_attach() {
     local _usage=0
     local _argv=()
     local _shell_code=
+    local _hybrid=no
 
     while [ -n "$1" ]; do
         case "$1" in
             -c) _shell_code="$2"; shift 2 ;;
             --no-start) shift; script_attach_nostart=yes ;;
             --no-unfreeze) shift; script_attach_nounfreeze=yes ;;
+            --hybrid) _hybrid=yes; shift ;;
             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
             -h) script_command_help attach; return ;;
             -*) script_eval_common_option "$1"; shift ;;
@@ -313,6 +315,9 @@ script_command_attach() {
 
     target_load "${_argv[0]}"
     unset _argv[0]
+
+    [ $_hybrid = no ] && [ "$current_driver_local" = yes ] \
+        && nef_fatal "Driver is local, not a system; command will not run: ${_argv[@]}"
 
     if [ -n "$_shell_code" ]; then
         [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command attach \
@@ -328,7 +333,7 @@ script_command_attach() {
     fi
     nef_log -d "Exec options: ${_options[@]}"
     nef_log -d "Exec argv: ${_argv[@]}"
-    driver_${current_driver}_exec "${_options[@]}" "${_argv[@]}"
+    driver_${current_driver}_exec --hybrid "${_options[@]}" "${_argv[@]}"
 }
 
 # command: status <target> [--driver] [--system] [--sysconf]
@@ -562,9 +567,10 @@ driver_ssh_exec() {
 # DRIVER: dockerfile
 
 driver_dockerfile_load() {
-    $current_driver_local=yes
-    current_driver_sysconf_update=no
     driver_dockerfile_dir=$current_target_id
+    current_prefix=$driver_dockerfile_dir
+    current_driver_local=yes
+    current_driver_sysconf_update=no
 }
 driver_dockerfile_status() {
     if [ -d "$driver_dockerfile_dir" ]; then
