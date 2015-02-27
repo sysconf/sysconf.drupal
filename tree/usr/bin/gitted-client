@@ -29,7 +29,7 @@ PATH=$script_dir:$script_dir/../share/nef-common:$script_dir/../../../../sysconf
 if [ $? -ne 0 ]; then
     echo "FATAL ERROR: could not find share/nef-common/shell-command" >&2
     echo "HINT: keep gitted-client within its sysconf/sysconf.gitted tree (along with sysconf.base)" >&2
-    echo "      (symlinking works; sysconf being installed in /usr also works)"
+    echo "      (symlinking works; sysconf being installed in /usr also works)" >&2
     exit 2
 fi
 sysconf_target_script=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH which sysconf-target)
