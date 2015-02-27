@@ -265,8 +265,8 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
 #   git fetch gitted:ssh:user@host mysql
 #
 # Or define it as a remote:
-#   git remote add container gitted:lxc:container
-#   git fetch container sysconf
+#   git remote add mylxc gitted:lxc:container42
+#   git fetch mylxc sysconf
 #   git checkout -b sysconf
 ##
 script_command_git-upload-pack() {
@@ -300,12 +300,12 @@ script_command_git-upload-pack() {
 #   git push "ext::/path/to/gitted-client %S ssh:user@host" mysql_bak:mysql
 #
 # After running "gitted-client register", you may use the "gitted:" scheme:
-#   git push gitted:lxc:container mysql
-#   git push gitted:ssh:user@host mysql_bak:mysql
+#   git push gitted:lxc:container42 mysql
+#   git push gitted:ssh:user@host.net mysql_bak:mysql
 #
 # Or define it as a remote:
-#   git remote add container gitted:lxc:container
-#   git push container sysconf
+#   git remote add mylxc gitted:lxc:container42
+#   git push mylxc sysconf
 ##
 script_command_git-receive-pack() {
     local _argv=()
