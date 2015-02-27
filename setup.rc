@@ -44,4 +44,7 @@ if [ ! -d $in_private_repos ]; then
     [ -d /origin.repository.git ] && _opts="$_opts --reference /origin.repository.git"
 
     git init --bare $_opts $in_private_repos
+
+    echo "Comitting state to Gitted..."
+    gitted commit '**'
 fi
