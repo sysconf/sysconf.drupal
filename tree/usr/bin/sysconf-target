@@ -204,7 +204,7 @@ HINT: run 'git status' and 'git commit' to save changes, or pass --git-ignore-ch
         if [ -f ~/.ssh/id_dsa.pub ]; then
             nef_log "copy ~/.ssh/id_dsa.pub to ${current_target}:/root/.ssh/authorized_keys"
             cat ~/.ssh/id_dsa.pub | driver_${current_driver}_exec \
-                -c 'mkdir -p /root/.ssh && cat >>/root/.ssh/authorized_keys'
+                -c "mkdir -p /root/.ssh && cat >>${current_prefix}/root/.ssh/authorized_keys"
         fi
     fi
 
@@ -214,7 +214,7 @@ HINT: run 'git status' and 'git commit' to save changes, or pass --git-ignore-ch
         local _git_user_email=$(git config --get user.email)
         if [ -n "$_git_user_name" -a -n "$_git_user_name" ]; then
             nef_log "set target Git username to '$_git_user_name' and email to '$_git_user_email'"
-            cat <<EOF | driver_${current_driver}_exec -c "cat >>/root/.gitconfig"
+            cat <<EOF | driver_${current_driver}_exec -c "cat >>${current_prefix}/root/.gitconfig"
 [user]
 	name = ${_git_user_name}
 	email = ${_git_user_email}
@@ -224,7 +224,7 @@ EOF
 
     # Check sysconf on target
     if [ $_force = no ]; then
-        (driver_${current_driver}_exec -c "test -d /sysconf") \
+        (driver_${current_driver}_exec -c "test -d ${current_prefix}/sysconf") \
             && nef_fatal "/sysconf exists already on target: $current_target
 
 HINT: provide --force to overwrite"
@@ -250,14 +250,14 @@ HINT: provide --force to overwrite"
 
         nef_log "Sending Sysconf data to target..."
         tar c . | driver_${current_driver}_exec \
-            -c "mkdir -p /sysconf && tar x -C /sysconf --no-same-owner --no-same-permissions"
+            -c "mkdir -p ${current_prefix}/sysconf && tar x -C ${current_prefix}/sysconf --no-same-owner --no-same-permissions"
 
         if [ -n "$_to_rm" ]; then
             cd $_rm_dir_former
             rm -rf "$_to_rm"
         fi
 
-        if [ "$_no_setup" = no ]; then
+        if [ "$_no_setup" = no -a "$current_driver_sysconf_update" != no ]; then
             nef_log "Setting up sysconf in target..."
             (driver_${current_driver}_exec /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update)
         fi
@@ -449,11 +449,11 @@ script_command_drivers() {
     NEF_LOG_NO_PREFIX=yes
 
     if [ $_raw = yes ]; then
-         [ $nef_opt_show_verbose = yes ] \
-             && nef_fatal_usage_command drivers "--raw is compatible with -v"
+        [ $nef_opt_show_verbose = yes ] \
+            && nef_fatal_usage_command drivers "--raw is compatible with -v"
     else
         if [ $nef_opt_show_verbose != yes ]; then
-            nef_log "(specify -v to see what options are available for each driver)"
+            nef_log "(specify -v to show full information about each driver)"
             nef_log
         fi
     fi
@@ -465,13 +465,19 @@ script_command_drivers() {
     if [ $_raw != yes ]; then
         _prefix="Driver: "
     fi
-    echo "${_prefix}ssh"
+    echo "${_prefix}ssh         - format: ssh:user@host"
     nef_log -v "  GIT_SSH_COMMAND"
     nef_log -v "    environment variable  can be set to override the SSH command"
     nef_log -v "    (and optional arguments). Example:"
     nef_log -v "    $ GIT_SSH_COMMAND='ssh -i git_id' sysconf-target status ssh:user@host"
     nef_log -v
-    echo "${_prefix}lxc"
+    echo "${_prefix}lxc         - format: lxc:container-name"
+    nef_log -v
+    echo "${_prefix}dockerfile  - format: dockerfile:/path/to/dockerfile/directory"
+    nef_log -v
+    nef_log -v "  The 'init' command creates the specified directory and generates the Dockerfile."
+    nef_log -v "  Sysconf is put in the directory. Run 'docker build <directory>' to build the"
+    nef_log -v "  image including Sysconf and its updates."
     nef_log -v
 }
 
@@ -549,6 +555,62 @@ driver_ssh_exec() {
     done
 
     exec ssh $driver_ssh_userhost -- "${_argv[@]}"
+}
+
+######################################################################
+# DRIVER: dockerfile
+
+driver_dockerfile_load() {
+    current_driver_sysconf_update=no
+    driver_dockerfile_dir=$current_target_id
+}
+driver_dockerfile_status() {
+    if [ -d "$driver_dockerfile_dir" ]; then
+        echo "Dockerfile directory exists: $driver_dockerfile_dir"
+        ls -l $driver_dockerfile_dir
+    else
+        echo "Dockerfile directory does not exists: $driver_dockerfile_dir"
+    fi
+}
+driver_dockerfile_create() {
+    local _dockerfile="$driver_dockerfile_dir/Dockerfile"
+    if [ -f "$_dockerfile" ]; then
+        nef_log "Container exists already, not creating: $_dockerfile"
+        return 1
+    else
+        mkdir -p "$driver_dockerfile_dir"
+        cat <<EOF >"$_dockerfile"
+FROM debian:wheezy
+MAINTAINER Sysconf <sysconf@gitted.net>
+
+ADD sysconf/ /
+RUN /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update
+CMD ["/sbin/init", "3"]
+EOF
+        nef_log "Dockerfile successfully generated: $_dockerfile"
+    fi
+
+}
+driver_dockerfile_exec() {
+    local _argv=()
+    local _sh_c=no
+    local _hybrid=no
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            --hybrid) _hybrid=yes; shift ;;
+            -c) _sh_c=yes; shift ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
+    [ $_hybrid = no -a $current_driver_local = yes ] \
+        && nef_fatal "target command will not be runned in the local system: ${_argv[@]}"
+
+    cd $driver_dockerfile_dir
+    exec "${_argv[@]}"
 }
 
 ######################################################################
