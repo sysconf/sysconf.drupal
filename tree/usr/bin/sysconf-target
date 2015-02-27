@@ -596,8 +596,8 @@ driver_dockerfile_create() {
 FROM ${distrib}
 MAINTAINER Sysconf <sysconf@gitted.net>
 
-ADD sysconf/ /
-ADD root/ /
+ADD sysconf/ /sysconf/
+ADD root/ /root/
 RUN /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update
 CMD ["/sbin/init", "3"]
 EOF
