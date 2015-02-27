@@ -69,7 +69,7 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 #
 # Options can be given at any position:
 #
-#   --force                             Overwrite existing /sysconf on target
+#   --force, -f                         Overwrite existing /sysconf on target
 #
 #   --no-copy                           Do not copy/fix sysconf
 #
@@ -130,7 +130,7 @@ script_command_init() {
 
     while [ -n "$1" ]; do
         case "$1" in
-            --force) _force=yes; shift ;;
+            --force | -f) _force=yes; shift ;;
             --no-copy) _no_copy=yes; shift ;;
             --no-setup) _no_setup=yes; shift ;;
             --no-git) _no_git=yes; shift ;;
