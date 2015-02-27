@@ -579,8 +579,12 @@ driver_dockerfile_create() {
         return 1
     else
         mkdir -p "$driver_dockerfile_dir"
+        local distrib=$(echo $script_init_distrib | cut -d: -f1)
+        local release=$(echo $script_init_distrib | cut -d: -f2)
+        [ -n "$release" ] && distrib=${distrib}:${release}
+
         cat <<EOF >"$_dockerfile"
-FROM debian:wheezy
+FROM ${distrib}
 MAINTAINER Sysconf <sysconf@gitted.net>
 
 ADD sysconf/ /
@@ -606,7 +610,7 @@ driver_dockerfile_exec() {
     done
 
     [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
-    [ $_hybrid = no -a $current_driver_local = yes ] \
+    [ $_hybrid = no ] && [ $current_driver_local = yes ] \
         && nef_fatal "target command will not be runned in the local system: ${_argv[@]}"
 
     cd $driver_dockerfile_dir
