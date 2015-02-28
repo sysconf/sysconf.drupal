@@ -52,7 +52,7 @@ Where <command> is one of:
         Install the compiled directory content to target
 
     update
-        Execute updates for given config and recursive deps
+        Execute updates (setup.rc) for given config and recursive deps
 
     add file_1 [file_2 [file_N]]
 	Move given (real) files to CONFIG's tree and replace them with a symlink.
@@ -88,7 +88,13 @@ Typical conf repository include:
         to form the path of dep repository.
 
     /setup.rc
-        Script executed for installing/updating the conf on target dir.
+        Bash script code sourced for installing/updating the conf on target dir.
+
+    /environment.rc
+        Shell code sourced in the inheritance stack before all setup.rc
+        are sourced (one stage before). Useful to define variables that
+        may be overloaded by higher profiles that affect the setup.rc of
+        lower profiles.
 
 More help on project website: https://github.com/geonef/sysconf.base
 EOF

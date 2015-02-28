@@ -36,14 +36,14 @@ if [ $? -ne 0 ]; then
 fi
 
 
-######################################################################
+################################################################################
 # DEFAULTS
 
 SYSCONF_TARGET_LIB_PREFIX=/usr/lib/sysconf/sysconf-target-
 SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 
 
-######################################################################
+################################################################################
 # COMMANDS:
 
 
@@ -166,7 +166,7 @@ The file actual/deps is missing or not readable. Are you sure it is a sysconf di
     if [ $_no_git = no -a -n "$(which git)" ]; then
         # check if git
         if git rev-parse --git-dir >/dev/null 2>&1; then
-            # Git repository found but sysconf dir may not be at its wd root
+            # Git repository found but sysconf dir may not be at the root of the work tree
             local _wdprefix=$(git rev-parse --show-prefix 2>/dev/null)
 
             if [ -z "$_wdprefix" ]; then
@@ -263,6 +263,10 @@ HINT: provide --force to overwrite"
             (driver_${current_driver}_exec /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update)
         fi
     fi
+
+    declare -f driver_${current_driver}_create_end >/dev/null \
+        && driver_${current_driver}_create_end
+
     nef_log "Done."
 }
 
@@ -341,7 +345,7 @@ script_command_attach() {
 #
 # Show the status of given target
 #
-#   --driver    Show (only) target driver information
+#   --driver    Show (only) target driver-specific information
 #   --system    Show (only) target system informatioo
 #   --sysconf   Show (only) target sysconf information
 ##
@@ -385,46 +389,46 @@ script_command_status() {
     fi
     if [ $_info_system = yes -o $_info_all = yes ]; then
         nef_log -- "---- SYSTEM STATUS  ------------------------------------------------------------"
-        nef_log "Connection user: $(driver_${current_driver}_exec id)"
-        (driver_${current_driver}_exec ps aux)
-        (driver_${current_driver}_exec df -h | grep -Ev " /dev/| /run")
-        (driver_${current_driver}_exec netstat -xtulpn)
+        nef_log "Connection user: $(driver_${current_driver}_exec --hybrid id)"
+        (driver_${current_driver}_exec --hybrid ps aux)
+        (driver_${current_driver}_exec --hybrid df -h | grep -Ev " /dev/| /run")
+        (driver_${current_driver}_exec --hybrid netstat -xtulpn)
         [ $nef_opt_show_verbose = yes ] \
-            && (driver_${current_driver}_exec netstat -xtupn)
+            && (driver_${current_driver}_exec --hybrid netstat -xtupn)
         [ $nef_opt_show_verbose = yes ] \
-            && (driver_${current_driver}_exec dpkg -l openssh git)
+            && (driver_${current_driver}_exec --hybrid dpkg -l openssh git)
         nef_log
     fi
     if [ $_info_sysconf = yes -o $_info_all = yes ]; then
         nef_log -- "---- SYSCONF STATUS ------------------------------------------------------------"
 
-        (driver_${current_driver}_exec test -d /sysconf) \
+        (driver_${current_driver}_exec --hybrid test -d /sysconf) \
             && local _sysconf=YES || local _sysconf=NO
         nef_log "/sysconf directory present: $_sysconf"
 
         if [ $_sysconf = YES ]; then
-            (driver_${current_driver}_exec test -d /sysconf/.git) \
+            (driver_${current_driver}_exec --hybrid test -d /sysconf/.git) \
                 && local _git=YES || local _git=NO
             nef_log "/sysconf is Git-enabled: $_sysconf"
             if [ $nef_opt_show_verbose = yes ]; then
-                (driver_${current_driver}_exec -c "cd /sysconf && git log -1 | cat") \
+                (driver_${current_driver}_exec --hybrid -c "cd ${current_prefix}/sysconf && git log -1 | cat") \
                     | nef_log_pipe "Git HEAD:"
-                (driver_${current_driver}_exec -c "cd /sysconf && git status --porcelain") \
+                (driver_${current_driver}_exec --hybrid -c "cd ${current_prefix}/sysconf && git status --porcelain") \
                     | nef_log_pipe "Git status:"
             fi
             nef_log
             nef_log "Composition of /sysconf:"
-            (driver_${current_driver}_exec -c 'cd /sysconf && ls -ld */* | grep -v " compiled/"')
+            (driver_${current_driver}_exec --hybrid -c 'cd ${current_prefix}/sysconf && ls -ld */* | grep -v " compiled/"')
             if [ $nef_opt_show_verbose = yes ]; then
                 nef_log
                 nef_log "Sysconf profile trees:"
-                (driver_${current_driver}_exec -c 'cd /sysconf && find */tree -not -type d | xargs ls -ld')
+                (driver_${current_driver}_exec --hybrid -c 'cd ${current_prefix}/sysconf && find */tree -not -type d | xargs ls -ld')
             fi
         fi
     fi
 }
 
-# command: drivers [-v | --raw]
+# command: driver [<name>] [-v | --raw]
 #
 # Dump a list of supported target drivers
 #
@@ -433,7 +437,7 @@ script_command_status() {
 #   --raw       Print a raw simple list of formats, each on its line (for scripts)
 #               (incompatible with -v/--verbose)
 ##
-script_command_drivers() {
+script_command_driver() {
     local _argv=()
     local _command=
     local _usage=0
@@ -453,7 +457,7 @@ script_command_drivers() {
 
     [ $nef_opt_show_verbose = yes ] && _nef_help_opts="$_nef_help_opts --full"
 
-    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command drivers "too many arguments"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command drivers "too many arguments"
 
     NEF_LOG_NO_PREFIX=yes
 
@@ -461,8 +465,8 @@ script_command_drivers() {
         [ $nef_opt_show_verbose = yes ] \
             && nef_fatal_usage_command drivers "--raw is compatible with -v"
     else
-        if [ $nef_opt_show_verbose != yes ]; then
-            nef_log "(specify -v to show full information about each driver)"
+        if [ $nef_opt_show_verbose != yes -a "${#_argv[@]}" -eq 0 ]; then
+            nef_log "(specify driver name for full information, or add -v to show everything)"
             nef_log
         fi
     fi
@@ -479,8 +483,8 @@ script_command_drivers() {
     if [ $nef_opt_show_verbose = yes ]; then
         _nef_help_opts="$_nef_help_opts --full"
     fi
-    nef_show_help --match DRIVER: --prefix "$_prefix" $_nef_help_opts
-    # nef_log -v
+
+    nef_show_help --match DRIVER: --sep : --prefix "$_prefix" --underline $_nef_help_opts ${_argv[0]}
 }
 
 # command: help [command]
@@ -509,7 +513,7 @@ script_command_help() {
 }
 
 
-######################################################################
+################################################################################
 # FUNCTIONALITY
 
 target_load() {
@@ -528,16 +532,121 @@ HINT: to print a list of available drivers, run: $0 drivers"
     driver_${current_driver}_load
 }
 
-######################################################################
-# DRIVER: ssh:USER@HOST
+driver_common_local_exec() {
+    local _argv=()
+    local _sh_c=no
+    local _hybrid=no
+    local _directory=
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            --directory) _directory="$2"; shift 2 ;;
+            --hybrid) _hybrid=yes; shift ;;
+            -c) _sh_c=yes; shift ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
+    [ $_hybrid = no ] \
+        && nef_fatal "target command will not be runned in the local system: ${_argv[@]}"
+    [ -d "$_directory" ] || nef_fatal "given --directory does not exist: $_directory"
+
+    cd "$_directory"
+    exec "${_argv[@]}"
+}
+
+################################################################################
+# DRIVER: local:[ROOT-DIR]              | Install on the local system
 #
-#  USER@HOST is the classical user and host that is given to the "ssh" client.
-#  It can be HOST only and can use ssh_config host definitions.
+# This driver manages the Sysconf installation on the local system.
 #
-#  The GIT_SSH_COMMAND environment variable can be set to override the SSH command
-#  (and optional arguments). Example:
+# It is only meaningful with the 'init' and 'status' commands.
+# It has little added-value over the remote/virtualization drivers as 'init' is
+# the same as copying Sysconf to ROOT-DIR/sysconf/ and running 'sysconf' from there
+# to install it on ROOT-DIR.
+#
+# ROOT-DIR (default: "/") is the root directory where Sysconf symlinks are installed.
+#
+# \# sysconf-target init   local:
+#
+#     The Sysconf is copied to ROOT-DIR/sysconf/ and then installed on ROOT-DIR/.
+#
+#     Be careful when using --force, espacially if ROOT-DIR is "/" as it may
+#     override files in your existing ROOT-DIR/sysconf/ pointed to be symlinks in ROOT-DIR.
+#
+# $ sysconf-target init   local:$HOME
+#
+#     As an unpriviledged user, install Sysconf to our HOME directory and use
+#     ~/sysconf/ to store the Sysconf layers.
+#     This makes sense for *user* Sysconf layers (typically for managing user
+#     settings, .bashrc and the like).
+#
+# $ sysconf-target init   local:/some/check --no-setup
+#
+#     Can be used to check what is installed on a target: the Sysconf layers
+#     in /some/check/sysconf and all the symlinks installed in /some/check.
+#
+# \# sysconf-target attach local:/some/dir --hybrid -- COMMAND
+#
+#     The 'attach' command just executes the command. It is dummy for such a local
+#     target, but it works with the --hybrid option.
+##
+driver_local_load() {
+    [[ "$current_target_id" =~ ^[^:]*(:[^:]+)?$ ]] \
+        || nef_fatal "invalid ROOT-DIR target format
+
+HINT: for information, run: $nef_command_name drivers local"
+    local _ifs="$IFS"; IFS=:
+    local _parts=($current_target_id); IFS="$_ifs"
+
+    driver_local_root_dir=${_parts[0]:/}
+    current_prefix=${driver_local_root_dir%/}
+    current_driver_local=yes
+    current_driver_sysconf_update=no
+    nef_log "driver_local_root_dir = $driver_local_root_dir"
+    nef_log "driver_local_sysconf_dir = $driver_local_sysconf_dir"
+    # [ -d "$driver_local_root_dir" ] || nef_fatal "root directory doe"
+}
+driver_local_status() {
+    nef_log "Hostname: $(hostname)"
+    nef_log "Sysconf root install directory: $driver_local_root_dir"
+    nef_log "Sysconf directory: $driver_local_sysconf_dir"
+}
+driver_local_create() {
+        # mkdir -p "$driver_local_sysconf"
+        mkdir -p "$driver_local_root_dir"
+    # true
+}
+driver_local_exec() {
+    driver_common_local_exec --directory "$driver_local_sysconf_dir" "$@"
+}
+
+################################################################################
+# DRIVER: ssh:USER@HOST                 | Connect to an SSH server
+#
+# OpenSSH (OpenBSD Secure Shell) is a set of computer programs that provides
+# encrypted communication sessions over a computer network using the SSH protocol.
+#
+# This driver uses the 'ssh' command to forward 'attach' commands to the specified
+# SSH server. The "ssh:USER@HOST" syntax designates the usual user and host that
+# is given to the 'ssh' command. It can be HOST only and can use ssh_config host
+# definitions.
+#
+# The GIT_SSH_COMMAND environment variable can be set to override the SSH command
+# (and optional arguments). Example:
 #    $ GIT_SSH_COMMAND='ssh -i git_id' sysconf-target status ssh:user@host"
 #
+# $ sysconf-target init   ssh:USER@HOST SYSCONF_DIRECTORY
+#
+#     Initialise or fix (with --force) the remote HOST system as identity USER.
+#     Most often with 'init', USER must be "root" to modify /sysconf.
+#
+# $ sysconf-target attach ssh:USER@HOST -- COMMAND
+#
+#     Run COMMAND inside the HOST server, under identity of USER.
+#     This is like running 'ssh USER@HOST COMMAND'.
 ##
 driver_ssh_load() {
     driver_ssh_userhost=$current_target_id
@@ -569,18 +678,24 @@ driver_ssh_exec() {
 }
 
 
-######################################################################
-# DRIVER: lxc:CONTAINER_NAME
+################################################################################
+# DRIVER: lxc:CONTAINER                 | Manage Linux LXC containers
 #
-#  The "lxc" driver is used to manage the LXC container CONTAINER_NAME.
+# LXC (Linux Containers) is an operating-system-level virtualization environment
+# for running multiple isolated Linux systems (containers) on a single Linux
+# control host. Learn more at: https://linuxcontainers.org/
 #
-#  $ sysconf-target init lxc:CONTAINER SYSCONF_SOURCE_DIR
-#        Creates and/or fix the given container, using lxc-create(1), lxc-start(1)
-#        and lxc-attach(1).
+# The "lxc" driver is used to manage the LXC container CONTAINER_NAME.
+# Historically, it was the first driver, the one that inspired sysconf-target.
 #
-#  $ sysconf-target attach lxc:CONTAINER COMMAND
-#        With lxc-attach(1), run COMMAND inside the LXC container CONTAINER.
+# $ sysconf-target init lxc:CONTAINER SYSCONF_SOURCE_DIR
 #
+#     Creates and/or fix the given container about Sysconf, using
+#     lxc-create(1), lxc-start(1) and lxc-attach(1).
+#
+# $ sysconf-target attach lxc:CONTAINER COMMAND
+#
+#     With lxc-attach(1), run COMMAND inside the LXC container CONTAINER.
 ##
 driver_lxc_create_opts=
 
@@ -772,116 +887,54 @@ driver_lxc_refresh_state() {
 }
 
 
-######################################################################
-# DRIVER: dockerfile:PATH_TO_DIRECTORY
+################################################################################
+# DRIVER: docker:CONTAINER[:IMAGE]      | Manage Docker.IO containers and images
 #
-#  $ sysconf-target init dockerfile:/directory/path SYSCONF_SOURCE_DIR
+# Docker is an open-source project that automates the deployment of applications
+# inside software containers. Learn more at: https://www.docker.com/
 #
-#      The 'init' command creates /directory/path and generates the Dockerfile.
-#      Sysconf is put in the directory. Run 'docker build <directory>' to build
-#      the image including Sysconf and its updates.
-#
-#  $ sysconf-target attach dockerfile:/directory/path --hybrid -- COMMAND
-#
-#      Run COMMAND in /directory/path. Be careful: it will run on the main system
-#      with the plain environment (this is not a "real" attach, just a simulation
-#      to help working with the Dockerfile dir).
-#      The --hybrid option is for safety of confirmation.
-#
-##
-driver_dockerfile_load() {
-    driver_dockerfile_dir=$current_target_id
-    current_prefix=$driver_dockerfile_dir
-    current_driver_local=yes
-    current_driver_sysconf_update=no
-}
-driver_dockerfile_status() {
-    if [ -d "$driver_dockerfile_dir" ]; then
-        echo "Dockerfile directory exists: $driver_dockerfile_dir"
-        ls -l $driver_dockerfile_dir
-    else
-        echo "Dockerfile directory does not exists: $driver_dockerfile_dir"
-    fi
-}
-driver_dockerfile_create() {
-    local _dockerfile="$driver_dockerfile_dir/Dockerfile"
-    if [ -f "$_dockerfile" ]; then
-        nef_log "Dockerfile exists already, not creating: $_dockerfile"
-        return 1
-    else
-        mkdir -p "$driver_dockerfile_dir/root"
-        local distrib=$(echo $script_init_distrib | cut -d: -f1)
-        local release=$(echo $script_init_distrib | cut -d: -f2)
-        [ -n "$release" ] && distrib=${distrib}:${release}
-
-        cat <<EOF >"$_dockerfile"
-FROM ${distrib}
-MAINTAINER Sysconf <sysconf@gitted.net>
-
-ADD sysconf/ /sysconf/
-ADD root/ /root/
-RUN /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update
-CMD ["/sbin/init", "3"]
-EOF
-        nef_log "Dockerfile successfully generated: $_dockerfile"
-    fi
-
-}
-driver_dockerfile_exec() {
-    local _argv=()
-    local _sh_c=no
-    local _hybrid=no
-
-    while [ -n "$1" ]; do
-        case "$1" in
-            --hybrid) _hybrid=yes; shift ;;
-            -c) _sh_c=yes; shift ;;
-            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
-            *) _argv=("${_argv[@]}" "$1"); shift ;;
-        esac
-    done
-
-    [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
-    [ $_hybrid = no ] \
-        && nef_fatal "target command will not be runned in the local system: ${_argv[@]}"
-
-    cd $driver_dockerfile_dir
-    exec "${_argv[@]}"
-}
-
-######################################################################
-# DRIVER: docker:CONTAINER[:IMAGE]      (not implemented yet)
-#
-# The "docker" driver enabled sysconf-target to work with both Docker images
+# The "docker" driver enables sysconf-target to work with both Docker images
 # and running Docker containers. In the image-only mode (specified as
 # "docker::IMAGE"), the "init" command will use "docker build" to create the
 # image and the "attach" command will run a new temporary container and then
 # save it to a new image with the same name, using 'docker commit'.
 #
-#  $ sysconf-target init   docker:CONTAINER:IMAGE SYSCONF_SOURCE_DIR
+# $ sysconf-target init   docker:CONTAINER:IMAGE SYSCONF_SOURCE_DIR
 #
-#      Build the Docker image named IMAGE and then run a new Docker container named
-#      CONTAINER.
+#     Build the Docker image named IMAGE and then run a new Docker container named
+#     CONTAINER.
 #
-#  $ sysconf-target attach docker:CONTAINER:IMAGE -- COMMAND
+# $ sysconf-target attach docker:CONTAINER:IMAGE -- COMMAND
 #
+#     Use 'docker exec' to run the specified command into the running container.
+#     If the container is stopped, it is started. If it does not exist, it is
+#     created with 'docker run' with a new image created with 'docker build'.
 #
+# $ sysconf-target init   docker:CONTAINER SYSCONF_SOURCE_DIR
 #
-#  $ sysconf-target init   docker:CONTAINER SYSCONF_SOURCE_DIR
+#     Same as "docker:CONTAINER:IMAGE" except the Docker image is not named.
+#     The ID of the newly created image is printed to the standard output.
+#     Run 'sysconf-target status docker:CONTAINER' for information.
 #
-#      Same as before, but the Docker image is not named. The image ID is printed
-#      to the standard output (run 'docker images' to find it)
+# $ sysconf-target attach docker:CONTAINER -- COMMAND
 #
-#  $ sysconf-target attach docker:CONTAINER -- COMMAND
+#     Same as "docker:CONTAINER:IMAGE" except the Docker image is not named.
+#     If need be, the image that is built has no tag, just an ID.
+#     Run 'sysconf-target status docker:CONTAINER' for information.
 #
+# $ sysconf-target init   docker::IMAGE SYSCONF_SOURCE_DIR
 #
+#     Create the named Docker image. It is like running 'init dockerfile:tmp/dir'
+#     followed by 'docker build -t IMAGE'. No container is created appart from
+#     the build process.
 #
-#  $ sysconf-target init   docker::IMAGE SYSCONF_SOURCE_DIR
+# $ sysconf-target attach docker::IMAGE -- COMMAND
 #
+#     Run COMMAND in a new crontainer from the given IMAGE (name or ID).
+#     After the command stops, the container is 'docker commit'-ed to the same
+#     IMAGE name (repo, repo/tag or none) and then deleted.
 #
-#
-#  $ sysconf-target attach docker::IMAGE -- COMMAND
-#
+#     This is like upgrading IMAGE with each subsequent attached COMMAND.
 ##
 driver_docker_load() {
     [[ "$current_target_id" =~ ^[a-zA-Z0-9_-]*(:[a-zA-Z0-9_-]+)?$ ]] \
@@ -925,7 +978,74 @@ driver_docker_exec() {
 }
 
 
-######################################################################
+################################################################################
+# DRIVER: dockerfile:DIRECTORY          | Generate a Dockerfile directory
+#
+# Docker is an open-source project that automates the deployment of applications
+# inside software containers. Learn more at: https://www.docker.com/
+#
+# This driver generates a Dockerfile definition that 'docker build' can use to
+# build an image or share as a repository.
+#
+# See also the 'docker' driver, which works with live Docker containers and images.
+#
+# $ sysconf-target init dockerfile:DIRECTORY SYSCONF_SOURCE_DIR
+#
+#     The 'init' command creates DIRECTORY and generates the "Dockerfile" inside
+#     with a copy of Sysconf. Run 'docker build <directory>' to build
+#     the image including Sysconf and its updates.
+#
+# $ sysconf-target attach dockerfile:/directory/path --hybrid -- COMMAND
+#
+#     Run COMMAND in /directory/path. Be careful: it will run on the main system
+#     with the plain environment (this is not a "real" attach, just a simulation
+#     to help working with the Dockerfile dir).
+#     The --hybrid option is for safety of confirmation.
+##
+driver_dockerfile_load() {
+    driver_dockerfile_dir=$current_target_id
+    current_prefix=$driver_dockerfile_dir
+    current_driver_local=yes
+    current_driver_sysconf_update=no
+}
+driver_dockerfile_status() {
+    if [ -d "$driver_dockerfile_dir" ]; then
+        echo "Dockerfile directory exists: $driver_dockerfile_dir"
+        ls -l $driver_dockerfile_dir
+    else
+        echo "Dockerfile directory does not exists: $driver_dockerfile_dir"
+    fi
+}
+driver_dockerfile_create() {
+    local _dockerfile="$driver_dockerfile_dir/Dockerfile"
+    if [ -f "$_dockerfile" ]; then
+        nef_log "Dockerfile exists already, not creating: $_dockerfile"
+        return 1
+    else
+        mkdir -p "$driver_dockerfile_dir/root"
+        local distrib=$(echo $script_init_distrib | cut -d: -f1)
+        local release=$(echo $script_init_distrib | cut -d: -f2)
+        [ -n "$release" ] && distrib=${distrib}:${release}
+
+        cat <<EOF >"$_dockerfile"
+FROM ${distrib}
+MAINTAINER Sysconf <sysconf@gitted.net>
+
+ADD sysconf/ /sysconf/
+ADD root/ /root/
+RUN /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update
+CMD ["/sbin/init", "3"]
+EOF
+        nef_log "Dockerfile successfully generated: $_dockerfile"
+    fi
+
+}
+driver_dockerfile_exec() {
+    driver_common_local_exec --directory "$driver_dockerfile_dir" "$@"
+}
+
+
+################################################################################
 # MAIN COMMAND LINE & RUN
 
 # common options:
@@ -979,6 +1099,6 @@ script_parse_cmdline() {
     nef_log -v "Command returned successfully."
 }
 
-######################################################################
+################################################################################
 
 script_parse_cmdline "$@"
