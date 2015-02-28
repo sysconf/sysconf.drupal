@@ -442,65 +442,6 @@ script_command_status() {
     fi
 }
 
-# # command: driver [<name>] [-v | --raw]
-# #
-# # Dump a list of supported target drivers
-# #
-# # Enable verbose (-v or --verbose) to get driver-specific options and variables.
-# #
-# #   --raw       Print a raw simple list of formats, each on its line (for scripts)
-# #               (incompatible with -v/--verbose)
-# ##
-# script_command_driver() {
-#     local _argv=()
-#     local _command=
-#     local _usage=0
-#     local _raw=no
-#     local _nef_help_opts=
-#     local _argv=()
-
-#     while [ -n "$1" ]; do
-#         case "$1" in
-#             --raw) _raw=yes; shift ;;
-#             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
-#             -h) script_command_help drivers; return ;;
-#             -*) script_eval_common_option "$1"; shift ;;
-#             *) _argv=("${_argv[@]}" "$1"); shift ;;
-#         esac
-#     done
-
-#     [ $nef_opt_show_verbose = yes ] && _nef_help_opts="$_nef_help_opts --full"
-
-#     [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command drivers "too many arguments"
-
-#     NEF_LOG_NO_PREFIX=yes
-
-#     if [ $_raw = yes ]; then
-#         [ $nef_opt_show_verbose = yes ] \
-#             && nef_fatal_usage_command drivers "--raw is compatible with -v"
-#     else
-#         if [ $nef_opt_show_verbose != yes -a "${#_argv[@]}" -eq 0 ]; then
-#             nef_log "(specify driver name for full information, or add -v to show everything)"
-#             nef_log
-#         fi
-#     fi
-
-#     nef_log -v "Available drivers for sysconf targets:"
-#     nef_log -v
-
-#     local _prefix=
-#     if [ $_raw = yes ]; then
-#         _prefix=""
-#     else
-#         _prefix="Driver: "
-#     fi
-#     if [ $nef_opt_show_verbose = yes ]; then
-#         _nef_help_opts="$_nef_help_opts --full"
-#     fi
-
-#     nef_show_help --match DRIVER: --sep : --prefix "$_prefix" --underline $_nef_help_opts ${_argv[0]}
-# }
-
 # command: help [<command> | <driver>:]
 #
 # Print information about command usage.
