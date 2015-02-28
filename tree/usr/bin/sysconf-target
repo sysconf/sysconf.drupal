@@ -2,20 +2,16 @@
 #
 # SYSCONF-target tool -- init target system with sysconf or create/attach command
 #
-# Different drivers are supported:
-#       ssh: connect to a SSH host
-#       lxc: create/start/attach a LXC container
-#
 # Run 'sysconf-target help <driver-name>:' for full driver information.
 # Add -h or --help to any command for detailed information.
+#
+# Learn more about Sysconf at: http://gitted.net/sysconf/
 #
 # EXAMPLES
 #     sysconf-target init   lxc:mycontainer
 #     sysconf-target init   ssh:root@myhost /sysconf
 #     sysconf-target attach lxc:mycontainer /bin/echo something
 #     sysconf-target attach ssh:myhost      service xyz reload
-#
-# Learn more about Sysconf at: http://gitted.net/sysconf/
 ##
 # HISTORY
 #   20150221 first version by JF Gigand <jf@geonef.fr>
@@ -261,7 +257,7 @@ HINT: provide --force to overwrite"
             rm -rf "$_to_rm"
         fi
 
-        if [ "$_no_install" = no ]; then
+        if [ "$_no_install" = no -a "$current_driver_sysconf_install" != no ]; then
             nef_log "Installing sysconf in target..."
             (driver_${current_driver}_exec --hybrid ${current_prefix}/sysconf/sysconf.base/tree/usr/bin/sysconf compile install)
             if [ "$_no_setup" = no -a "$current_driver_sysconf_update" != no ]; then
@@ -297,11 +293,11 @@ HINT: provide --force to overwrite"
 #   -c                  Code to run in a shell (like sh -c, see sh(1))
 #                       (instead of a "physical" command)
 #   --no-start          Don't start a stopped machine
-#   --no-unfreeze       Don't unfreeze a frozen machine
+#   --no-resume       Don't resume a paused machine
 ##
 script_command_attach() {
     script_attach_nostart=no
-    script_attach_nounfreeze=no
+    script_attach_noresume=no
     local _argv=()
     local _options=()
     local _command=
@@ -314,7 +310,7 @@ script_command_attach() {
         case "$1" in
             -c) _shell_code="$2"; shift 2 ;;
             --no-start) shift; script_attach_nostart=yes ;;
-            --no-unfreeze) shift; script_attach_nounfreeze=yes ;;
+            --no-resume) shift; script_attach_noresume=yes ;;
             --hybrid) _hybrid=yes; shift ;;
             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
             -h) script_command_help attach; return ;;
@@ -383,6 +379,14 @@ script_command_status() {
 
     target_load "${_argv[0]}"
 
+    local _available=yes
+    [ $driver_target_state = paused -o $driver_target_state = stopped \
+        -o $driver_target_state = missing ] && _available=no
+
+    if [ $_available = no ]; then
+        [ $_info_system = yes ] && nef_fatal -- "--system not available as target state is: $driver_target_state"
+        [ $_info_sysconf = yes ] && nef_fatal -- "--system not available as target state is: $driver_target_state"
+    fi
     NEF_LOG_NO_PREFIX=yes
 
     [ $nef_opt_show_verbose != yes ] \
@@ -392,10 +396,12 @@ script_command_status() {
     if [ $_info_driver = yes -o $_info_all = yes ]; then
         nef_log -- "---- DRIVER STATUS -------------------------------------------------------------"
         echo "Driver: $current_driver"
+        echo "State: $driver_target_state"
+        echo "Available: $_available"
         driver_${current_driver}_status
         nef_log
     fi
-    if [ $_info_system = yes -o $_info_all = yes ]; then
+    if [ $_info_system = yes -o $_info_all = yes ] && [ $_available = yes ]; then
         nef_log -- "---- SYSTEM STATUS  ------------------------------------------------------------"
         nef_log "Connection user: $(driver_${current_driver}_exec --hybrid id)"
         (driver_${current_driver}_exec --hybrid ps aux)
@@ -407,7 +413,7 @@ script_command_status() {
             && (driver_${current_driver}_exec --hybrid dpkg -l openssh git)
         nef_log
     fi
-    if [ $_info_sysconf = yes -o $_info_all = yes ]; then
+    if [ $_info_sysconf = yes -o $_info_all = yes ] && [ $_available = yes ]; then
         nef_log -- "---- SYSCONF STATUS ------------------------------------------------------------"
 
         (driver_${current_driver}_exec --hybrid test -d /sysconf) \
@@ -539,6 +545,7 @@ target_load() {
     current_target="$1"
     current_driver=$(echo "$current_target" | sed 's/:.*//')
     current_target_id=$(echo "$current_target" | sed -r 's/^[^:]+://')
+    driver_target_state=unknown
 
     nef_log -v "Current driver: $current_driver"
     nef_log -d "Current target: $current_target"
@@ -570,6 +577,7 @@ driver_common_local_exec() {
         && nef_fatal "target command will not be runned in the local system: ${_argv[@]}"
 
     cd "$current_prefix" || nef_fatal "could not cd to directory: $current_prefix"
+    nef_log -v "driver_common_local_exec <$current_prefix> $*"
     exec "${_argv[@]}"
 }
 
@@ -686,6 +694,7 @@ driver_ssh_exec() {
         esac
     done
 
+    nef_log -v "driver_ssh_exec <$driver_ssh_userhost> ${_argv[*]}"
     exec ssh $driver_ssh_userhost -- "${_argv[@]}"
 }
 
@@ -770,14 +779,14 @@ MEOF
     fi
 }
 driver_lxc_status() {
-    lxc-info -n $driver_lxc_container_name
-    # nef_log "Container status: $driver_lxc_container_state"
+    nef_log "Container status: $driver_target_state"
+    [ $nef_opt_show_verbose = yes ] && lxc-info -n $driver_lxc_container_name
 }
 
 driver_lxc_create() {
     # false
     # lxc-create
-    if [ "$driver_lxc_container_state" = missing ]; then
+    if [ "$driver_target_state" = missing ]; then
         local distrib=$(echo $script_init_distrib | cut -d: -f1)
         local release=$(echo $script_init_distrib | cut -d: -f2)
         local arch=$(echo $script_init_distrib | cut -d: -f3)
@@ -844,7 +853,7 @@ driver_lxc_exec() {
     done
     [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
 
-    case "$driver_lxc_container_state" in
+    case "$driver_target_state" in
         running)
             ;;
         stopped)
@@ -871,9 +880,9 @@ HINT: if you have just installed LXC, just reboot your system and retry (it is k
             # nef_log -v "Waiting for a few seconds to let it be ready..."
             # sleep 2
             ;;
-        frozen)
-            [ "$script_attach_nounfreeze" = yes ] \
-                && nef_fatal "Container $driver_lxc_container_name is frozen (and --no-unfreeze given)"
+        paused)
+            [ "$script_attach_noresume" = yes ] \
+                && nef_fatal "Container $driver_lxc_container_name is paused (and --no-resume given)"
 
             nef_log "Unfreezing container $driver_lxc_container_name"
             lxc-unfreeze -n $driver_lxc_container_name || nef_fatal "lxc-unfreeze failed with status $?"
@@ -885,22 +894,23 @@ HINT: Create it with: $0 init $current_target /path/to/sysconf"
             ;;
     esac
 
+    nef_log -v "driver_lxc_exec <$current_target_id> ${_argv[*]}"
     exec lxc-attach --clear-env -n $current_target_id -- "${_argv[@]}"
 }
 
 driver_lxc_refresh_state() {
-    driver_lxc_container_state=$(
+    driver_target_state=$(
         lxc-info -sHn $driver_lxc_container_name 2>/dev/null \
             | head -n 1 | tr '[:upper:]' '[:lower:]'
     )
-    [ -z "$driver_lxc_container_state" ] && driver_lxc_container_state=missing
-    nef_log -v "Managing container: $driver_lxc_container_name ($driver_lxc_container_state)"
-    # could be: missing, running, stopped
+    [ -z "$driver_target_state" ] && driver_target_state=missing
+    [ "$driver_target_state" = frozen ] && driver_target_state=paused
+    nef_log -v "Managing container: $driver_lxc_container_name ($driver_target_state)"
 }
 
 
 ################################################################################
-# DRIVER: docker:CONTAINER[:IMAGE]      | Manage Docker.IO containers and images
+# DRIVER: docker:[CONTAINER][:IMAGE]    | Manage Docker.IO containers and images
 #
 # Docker is an open-source project that automates the deployment of applications
 # inside software containers. Learn more at: https://www.docker.com/
@@ -970,26 +980,41 @@ driver_docker_status() {
     fi
 }
 driver_docker_create() {
-    driver_dockerfile_dir=$(mktemp -d)
+    driver_docker_orig_target_id=$current_target_id
+    current_target_id=$(mktemp -d)
+    # driver_dockerfile_dir=$(mktemp -d)
+    # current_driver=dockerfile
+    driver_dockerfile_load
     driver_dockerfile_create
 }
 driver_docker_create_end() {
+    current_target_id=$driver_docker_orig_target_id
+    driver_docker_orig_target_id=
+    current_driver=docker
+    driver_docker_load
     cd $driver_dockerfile_dir
+
     local _opts=
     [ -n "$driver_docker_image" ] && _opts="--tag=$driver_docker_image"
-    docker build $_opts \
+    docker build $_opts . \
         || nef_fatal "failed to build the Dockerimage. Dockerfile directory is: $driver_dockerfile_dir"
+
     local _image_id=$(docker images | head -n 2 | tail -n +2 | awk '{print $3}')
+    rm -rf $driver_dockerfile_dir
     nef_log "Succefully build Docker image ID: $_image_id"
 
     if [ -n "$driver_docker_container" ]; then
-        local _container_id=$(docker run -d "--name=$driver_docker_container" $_image_id)
-        [ $? -ne 0 ] && nef_fatal "Could not run Docker container (daemon) from image: $_image_id"
+        docker run -d "--name=$driver_docker_container" $_image_id \
+            || nef_fatal "Could not run Docker container (daemon) from image: $_image_id"
+        local _container_id=$(docker ps -q -n=1)
         nef_log "Created container ID: $_container_id"
     fi
-
 }
 driver_docker_exec() {
+    if [ -n "$driver_docker_orig_target_id" ]; then
+        driver_dockerfile_exec "$@"
+        return
+    fi
     local _argv=()
     local _sh_c=no
     local _hybrid=no
@@ -1005,7 +1030,23 @@ driver_docker_exec() {
 
     [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
 
-    # exec "${_argv[@]}"
+    [ -n "$driver_docker_container" ] \
+        && nef_fatal "'docker exec' not supported yet; cannot attach to an existing container"
+
+    nef_log -v "driver_docker_exec <$current_target_id> ${_argv[*]}"
+    docker run -i -t "$driver_docker_image" "${_argv[@]}"
+    local _status=$?
+    local _container_id=$(docker ps -n=1 -q)
+    nef_log -d "Container ID: $_container_id"
+    local _commit_id=
+    _commit_id=$(docker commit $_container_id $driver_docker_image) \
+         || nef_log "'docker commit' failed with status $?"
+    nef_log -v "Succefully committed Docker container to image <$driver_docker_image> ID: $_commit_id"
+    local _deleted_id=
+    _deleted_id=$(docker rm -f $_container_id) \
+        && nef_log -v "Deleted container ID: $_deleted_id"
+
+    exit $_status # because we did not exec
 }
 
 
@@ -1037,7 +1078,7 @@ driver_dockerfile_load() {
     driver_dockerfile_dir=$current_target_id
     current_prefix=$driver_dockerfile_dir
     current_driver_local=yes
-    current_driver_sysconf_update=no
+    current_driver_sysconf_install=no
 }
 driver_dockerfile_status() {
     if [ -d "$driver_dockerfile_dir" ]; then
@@ -1075,6 +1116,106 @@ driver_dockerfile_exec() {
     driver_common_local_exec "$@"
 }
 
+
+################################################################################
+# DRIVER: vbox:VM                       | Manage VirtualBox machines
+#
+# VirtualBox is a powerful x86 and AMD64/Intel64 virtualization product for
+# enterprise as well as home use. Learn more at: https://www.virtualbox.org/
+#
+# This driver manages will create, start and attach virtual machines through
+# the 'vboxmanager' command which is part is the VirtualBox distribution.
+#
+# The <VM> argument is the machine UUID of an existing VM or the NAME of a machine
+# existing or to create.
+#
+# To attach a command, the target VM needs the guest additions to be installed
+# and enabled, which should be the case for VM creates by 'sysconf-target init'.
+#
+# $ sysconf-target init vbox:VM         (not implemented yet)
+#
+#     The 'init' command creates the virtual machine named VM.
+#
+# $ sysconf-target attach vbox:VM -- COMMAND
+#
+#     Run COMMAND in a the running named VM using 'vboxmanage guestcontrol'.
+#     If VM is paused, it is resumed. If stopped, it is started
+#     (using 'vboxmanage startvm' and 'vboxmanage controlvm').
+#
+# $ sysconf-target status vbox:VM --driver
+#
+#     Run 'vboxmanage showvminfo <VM>' to show information.
+#     With --verbose, it also prints the VM log.
+##
+
+driver_vbox_load() {
+    driver_vbox_vm=$current_target_id
+    which vboxmanage >/dev/null \
+        || nef_fatal "Could not find the 'vboxmanage' program. You need to install the 'virtualbox' package."
+    driver_vbox_refresh_state
+}
+driver_vbox_status() {
+    nef_log -v "VM status: $driver_target_state" 2>&1
+    vboxmanage showvminfo $driver_vbox_vm
+    if [ $nef_opt_show_verbose = yes ]; then
+        vboxmanage metrics list $driver_vbox_vm
+        vboxmanage showvminfo $driver_vbox_vm --log 0
+    fi
+}
+driver_vbox_create() {
+    nef_fatal "action not implemented (yet) for this driver: init"
+}
+driver_vbox_exec() {
+    local _argv=()
+    local _sh_c=no
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            --hybrid) shift ;;
+            -c) _sh_c=yes; shift ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+    [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
+
+    case "$driver_target_state" in
+        running)
+            ;;
+        stopped)
+            nef_log "Starting VirtualBox VM in background: $driver_vbox_vm"
+            vboxmanage startvm $driver_vbox_vm --type headless \
+                || nef_fatal "vboxmanage failed with to resume VM (status $?): $driver_vbox_vm"
+            ;;
+        paused)
+            [ "$script_attach_noresume" = yes ] \
+                && nef_fatal "VirtualBox VM is paused and --no-resume given: $driver_vbox_vm"
+
+            nef_log "Resuming VirtualBox VM: $driver_vbox_vm"
+            vboxmanage controlvm $driver_vbox_vm resume \
+                || nef_fatal "vboxmanage failed with to resume VM (status $?): $driver_vbox_vm"
+            ;;
+        missing)
+            nef_fatal "Container does not exist: $driver_lxc_container_name!
+
+HINT: Create it with: $0 init $current_target /path/to/sysconf"
+            ;;
+    esac
+
+    local _command="${_argv[0]}"; unset _argv[0]
+    nef_log -v "driver_vbox_exec <$current_target_id> ${_argv[*]}"
+    exec vboxmanage guestcontrol $driver_vbox_vm execute $_command --username root -- "${_argv[@]}"
+}
+
+driver_vbox_refresh_state() {
+    driver_target_state=$(
+        vboxmanage showvminfo vm 2>/dev/null | grep -i ^State: \
+            | sed -r 's/^[^ ]+ +([^(]+)\(?.*$/\1/'
+    )
+    [ -z "$driver_target_state" ] && driver_target_state=missing
+    [ "${driver_target_state% }" = "powered off" ] && driver_target_state=stopped
+    nef_log -v "Managing VirtualBox VM: $driver_vbox_vm ($driver_target_state)"
+}
 
 ################################################################################
 # MAIN COMMAND LINE & RUN
