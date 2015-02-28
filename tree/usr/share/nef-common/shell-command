@@ -227,29 +227,52 @@ nef_command_merge_env() {
     fi
 }
 
-# Usage: nef_show_help [command]
+# Usage: nef_show_help [<name>]
 #
 # This works by reading the command script itself ($0) and parsing out
 # the doc comments "à la javadoc"
 #
+# --prefix <prefix>     Show <prefix> before command name instead of 4 spaces
+# --match <prefix>      Match <prefix> for parts instead of "command:"
+# --full
+## --all                 Always show all parts even if no --full and no <name> is given
+#
 nef_show_help() {
     local _usage_only=no
-    # while [ -n "$1" ]; do
-    #     case "$1" in
-    #         --usage) _usage_only=yes; shift ;;
-    #         --) shift; break ;;
-    #         *) break;
-    #     esac
-    # done
+    local _match=command:
+    local _full=no
+    local _specific=no
+    local _prefix=
+    # local _all=no
+
+    while [ "$1" != "" ]; do
+        case "$1" in
+            --prefix) _prefix="$2"; shift 2 ;;
+            --match) _match="$2"; _specific=yes; shift 2 ;;
+            --full) _full=yes; shift ;;
+            # --all) _all=yes; shift ;;
+            --) shift; break ;;
+            -*) nef_log "nef_show_help(): bad option: $1"; shift ;;
+            *) break ;;
+        esac
+    done
     local _command="$1"
+    if [ -z "$_prefix" ]; then
+        if [ -n "$_command" ]; then
+            _prefix="usage: $nef_command_callname "
+        else
+            _prefix="    "
+        fi
+    fi
     local _keep_showing=no
-    local _prefix1="usage: $nef_command_callname"
-    local _prefix2=$(echo "$_prefix1" | sed "s/./ /g")
+    # local _prefix1="usage: $nef_command_callname"
+    # local _prefix2=$(echo "$_prefix1" | sed "s/./ /g")
     local _had_command=no
     local _category=
     local _ignore_blank=no
 
-    if test -z "$_command"; then
+
+    if [ -z "$_command" -a $_specific = no ]; then
         _keep_showing=yes
         _ignore_blank=yes
         # cmd_description=$(cat $(which "$0") | head -n 3 | tail -n 1 | sed -r 's/[^-]*- ?//')
@@ -294,33 +317,39 @@ nef_show_help() {
                     _keep_showing=yes
                 fi
             elif [[ "$_line" =~ ^COMMANDS: ]]; then
-                _category=$(echo "$_line" | sed -r 's/^COMMANDS: *(.*)/\1/')
-                if [ -z "$_command" ]; then
-                    [ $_had_command = yes ] && echo
-                    echo "${_category} COMMANDS"
-                    echo
+                if [ $_specific = no ]; then
+                    _category=$(echo "$_line" | sed -r 's/^COMMANDS: *(.*)/\1/')
+                    if [ -z "$_command" ]; then
+                        [ $_had_command = yes ] && echo
+                        echo "${_category} COMMANDS"
+                        echo
+                    fi
+                    _had_command=no
                 fi
-                _had_command=no
 
-            elif [[ "$_line" =~ ^command: ]]; then
-                _command_name=$(echo "$_line" | sed -r 's/^command: ([^ ]+) ?.*/\1/')
-                _command_args=$(echo "$_line" | sed -r 's/^command: [^ ]+ ?(.*)/\1/')
+            elif [[ "$_line" =~ ^${_match} ]]; then
+                _command_name=$(echo "$_line" | sed -r "s/^${_match} ([^ ]+) ?.*/\1/")
+                _command_args=$(echo "$_line" | sed -r "s/^${_match} [^ ]+ ?(.*)/\1/")
 
-                if [ -n "$_command" ]; then
-                    if [ "$_command" = "$_command_name" ]; then
-                        echo "usage: $nef_command_callname $_command $_command_args"
+                # echo "command: $_command_name full=$_full"
+                if [ -n "$_command" -o $_full = yes ]; then
+                    if [ -z "$_command" -o "$_command" = "$_command_name" ]; then
+                        echo "${_prefix}$_command_name $_command_args"
                         if [ $_usage_only = yes ]; then
                             break;
                         fi
-                            _keep_showing=yes
-                            _ignore_blank=yes
-                            echo
-                            if [ -n "$_category" ]; then
-                                echo "$_category COMMAND:"
-                            fi
+                        if [ -z "$_command" -a $_full = yes ]; then
+                            echo "${_prefix}$_command_name $_command_args" | sed s/./-/g
+                        fi
+                        _keep_showing=yes
+                        _ignore_blank=yes
+                        echo
+                        if [ -n "$_category" ]; then
+                            echo "$_category COMMAND:"
+                        fi
                     fi
                 else
-                    echo -e "    $_command_name\t$_command_args"
+                    echo -e "${_prefix}$_command_name\t$_command_args"
                     _had_command=yes
                 fi
             fi
