@@ -10,13 +10,12 @@
 # Add -h or --help to any command for detailed information.
 #
 # EXAMPLES
-#     sysconf-target init   lxc:mycontainer /sysconf
-#     sysconf-target init   ssh:root@myhost /custom/local/sysconf/path
+#     sysconf-target init   lxc:mycontainer
+#     sysconf-target init   ssh:root@myhost /sysconf
 #     sysconf-target attach lxc:mycontainer /bin/echo something
 #     sysconf-target attach ssh:myhost      service xyz reload
 #
 # Learn more about Sysconf at: http://gitted.net/sysconf/
-#
 ##
 # HISTORY
 #   20150221 first version by JF Gigand <jf@geonef.fr>
@@ -47,7 +46,7 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 # COMMANDS:
 
 
-# command: init <target> <sysconf-dir>
+# command: init <target> [<sysconf-dir>]
 #
 # Initialise <target> from <sysconf-dir>
 #
@@ -55,8 +54,8 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 #       To get the list of available drivers, run the "dump-drivers" command.
 #       More information about this on root help.
 #
-#   <sysconf-dir>       Local sysconf directory to initialize on target
-#       tar(1) is used to copy <sysconf-dir> to the target.
+#   <sysconf-dir>       Local sysconf directory to initialize on target,
+#       defaults to ".". tar(1) is used to copy <sysconf-dir> to the target.
 #
 #       If Git is available and <sysconf-dir> is a Git working dir,
 #       the GIT SPECIAL BEHAVIOR is enabled unless --no-git is given.
@@ -146,11 +145,11 @@ script_command_init() {
         esac
     done
 
-    [ "${#_argv[@]}" -lt 2 ] && nef_fatal_usage_command init "missing argument"
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command init "missing argument"
     [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command init "too many arguments"
 
     target_load "${_argv[0]}"
-    script_init_sysconf_dir="${_argv[1]}"
+    script_init_sysconf_dir="${_argv[1]-.}"
 
     # Check if sysconf dir is valid
     cd "$script_init_sysconf_dir" \
