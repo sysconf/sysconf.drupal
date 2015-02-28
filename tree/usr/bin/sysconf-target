@@ -6,7 +6,7 @@
 #       ssh: connect to a SSH host
 #       lxc: create/start/attach a LXC container
 #
-# Run 'sysconf-target drivers -v' for full driver information.
+# Run 'sysconf-target help <driver-name>:' for full driver information.
 # Add -h or --help to any command for detailed information.
 #
 # EXAMPLES
@@ -72,7 +72,9 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 #
 #   --no-copy                           Do not copy/fix sysconf
 #
-#   --no-setup                          Do not setup sysconf, just copy it
+#   --no-install                        Do not install sysconf, just make the copy
+#
+#   --no-setup                          Do not setup sysconf, just install it
 #
 #   --no-git                            Disable the GIT SPECIAL BEHAVIOR
 #       If <sysconf-dir> is the working dir of a Git repository,
@@ -119,6 +121,7 @@ script_command_init() {
     local _argv=()
     local _command=
     local _no_copy=no
+    local _no_install=no
     local _no_setup=no
     local _no_git=no
     local _git_ignore_changes=no
@@ -131,6 +134,7 @@ script_command_init() {
         case "$1" in
             --force | -f) _force=yes; shift ;;
             --no-copy) _no_copy=yes; shift ;;
+            --no-install) _no_install=yes; shift ;;
             --no-setup) _no_setup=yes; shift ;;
             --no-git) _no_git=yes; shift ;;
             --git-ignore-changes) _git_ignore_changes=yes; shift ;;
@@ -257,9 +261,13 @@ HINT: provide --force to overwrite"
             rm -rf "$_to_rm"
         fi
 
-        if [ "$_no_setup" = no -a "$current_driver_local" != yes ]; then
-            nef_log "Setting up sysconf in target..."
-            (driver_${current_driver}_exec /sysconf/sysconf.base/tree/usr/bin/sysconf compile install update)
+        if [ "$_no_install" = no ]; then
+            nef_log "Installing sysconf in target..."
+            (driver_${current_driver}_exec --hybrid ${current_prefix}/sysconf/sysconf.base/tree/usr/bin/sysconf compile install)
+            if [ "$_no_setup" = no -a "$current_driver_sysconf_update" != no ]; then
+                nef_log "Setting up sysconf in target..."
+                (driver_${current_driver}_exec --hybrid ${current_prefix}/sysconf/sysconf.base/tree/usr/bin/sysconf update)
+            fi
         fi
     fi
 
@@ -383,6 +391,7 @@ script_command_status() {
 
     if [ $_info_driver = yes -o $_info_all = yes ]; then
         nef_log -- "---- DRIVER STATUS -------------------------------------------------------------"
+        echo "Driver: $current_driver"
         driver_${current_driver}_status
         nef_log
     fi
@@ -427,66 +436,66 @@ script_command_status() {
     fi
 }
 
-# command: driver [<name>] [-v | --raw]
-#
-# Dump a list of supported target drivers
-#
-# Enable verbose (-v or --verbose) to get driver-specific options and variables.
-#
-#   --raw       Print a raw simple list of formats, each on its line (for scripts)
-#               (incompatible with -v/--verbose)
-##
-script_command_driver() {
-    local _argv=()
-    local _command=
-    local _usage=0
-    local _raw=no
-    local _nef_help_opts=
-    local _argv=()
+# # command: driver [<name>] [-v | --raw]
+# #
+# # Dump a list of supported target drivers
+# #
+# # Enable verbose (-v or --verbose) to get driver-specific options and variables.
+# #
+# #   --raw       Print a raw simple list of formats, each on its line (for scripts)
+# #               (incompatible with -v/--verbose)
+# ##
+# script_command_driver() {
+#     local _argv=()
+#     local _command=
+#     local _usage=0
+#     local _raw=no
+#     local _nef_help_opts=
+#     local _argv=()
 
-    while [ -n "$1" ]; do
-        case "$1" in
-            --raw) _raw=yes; shift ;;
-            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
-            -h) script_command_help drivers; return ;;
-            -*) script_eval_common_option "$1"; shift ;;
-            *) _argv=("${_argv[@]}" "$1"); shift ;;
-        esac
-    done
+#     while [ -n "$1" ]; do
+#         case "$1" in
+#             --raw) _raw=yes; shift ;;
+#             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+#             -h) script_command_help drivers; return ;;
+#             -*) script_eval_common_option "$1"; shift ;;
+#             *) _argv=("${_argv[@]}" "$1"); shift ;;
+#         esac
+#     done
 
-    [ $nef_opt_show_verbose = yes ] && _nef_help_opts="$_nef_help_opts --full"
+#     [ $nef_opt_show_verbose = yes ] && _nef_help_opts="$_nef_help_opts --full"
 
-    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command drivers "too many arguments"
+#     [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command drivers "too many arguments"
 
-    NEF_LOG_NO_PREFIX=yes
+#     NEF_LOG_NO_PREFIX=yes
 
-    if [ $_raw = yes ]; then
-        [ $nef_opt_show_verbose = yes ] \
-            && nef_fatal_usage_command drivers "--raw is compatible with -v"
-    else
-        if [ $nef_opt_show_verbose != yes -a "${#_argv[@]}" -eq 0 ]; then
-            nef_log "(specify driver name for full information, or add -v to show everything)"
-            nef_log
-        fi
-    fi
+#     if [ $_raw = yes ]; then
+#         [ $nef_opt_show_verbose = yes ] \
+#             && nef_fatal_usage_command drivers "--raw is compatible with -v"
+#     else
+#         if [ $nef_opt_show_verbose != yes -a "${#_argv[@]}" -eq 0 ]; then
+#             nef_log "(specify driver name for full information, or add -v to show everything)"
+#             nef_log
+#         fi
+#     fi
 
-    nef_log -v "Available drivers for sysconf targets:"
-    nef_log -v
+#     nef_log -v "Available drivers for sysconf targets:"
+#     nef_log -v
 
-    local _prefix=
-    if [ $_raw = yes ]; then
-        _prefix=""
-    else
-        _prefix="Driver: "
-    fi
-    if [ $nef_opt_show_verbose = yes ]; then
-        _nef_help_opts="$_nef_help_opts --full"
-    fi
+#     local _prefix=
+#     if [ $_raw = yes ]; then
+#         _prefix=""
+#     else
+#         _prefix="Driver: "
+#     fi
+#     if [ $nef_opt_show_verbose = yes ]; then
+#         _nef_help_opts="$_nef_help_opts --full"
+#     fi
 
-    nef_show_help --match DRIVER: --sep : --prefix "$_prefix" --underline $_nef_help_opts ${_argv[0]}
-}
+#     nef_show_help --match DRIVER: --sep : --prefix "$_prefix" --underline $_nef_help_opts ${_argv[0]}
+# }
 
-# command: help [command]
+# command: help [<command> | <driver>:]
 #
 # Print information about command usage.
 #
@@ -508,7 +517,18 @@ script_command_help() {
 
     NEF_LOG_NO_PREFIX=yes
 
-    nef_show_help $_command
+    if [[ "$_command" =~ :$ ]]; then
+
+        nef_show_help --match DRIVER: --sep : --prefix "Driver: " --underline --full ${_command%:}
+
+    else
+        nef_show_help $_command
+        if [ -z "$_command" ]; then
+            echo "DRIVERS available for <target>:"
+            echo
+            nef_show_help --match DRIVER: --sep :
+        fi
+    fi
 }
 
 
@@ -535,11 +555,9 @@ driver_common_local_exec() {
     local _argv=()
     local _sh_c=no
     local _hybrid=no
-    local _directory=
 
     while [ -n "$1" ]; do
         case "$1" in
-            --directory) _directory="$2"; shift 2 ;;
             --hybrid) _hybrid=yes; shift ;;
             -c) _sh_c=yes; shift ;;
             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
@@ -550,9 +568,8 @@ driver_common_local_exec() {
     [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
     [ $_hybrid = no ] \
         && nef_fatal "target command will not be runned in the local system: ${_argv[@]}"
-    [ -d "$_directory" ] || nef_fatal "given --directory does not exist: $_directory"
 
-    cd "$_directory"
+    cd "$current_prefix" || nef_fatal "could not cd to directory: $current_prefix"
     exec "${_argv[@]}"
 }
 
@@ -573,7 +590,7 @@ driver_common_local_exec() {
 #     The Sysconf is copied to ROOT-DIR/sysconf/ and then installed on ROOT-DIR/.
 #
 #     Be careful when using --force, espacially if ROOT-DIR is "/" as it may
-#     override files in your existing ROOT-DIR/sysconf/ pointed to be symlinks in ROOT-DIR.
+#     override files in your existing ROOT-DIR/sysconf/ pointed to by symlinks in ROOT-DIR.
 #
 # $ sysconf-target init   local:$HOME
 #
@@ -600,26 +617,22 @@ HINT: for information, run: $nef_command_name drivers local"
     local _ifs="$IFS"; IFS=:
     local _parts=($current_target_id); IFS="$_ifs"
 
-    driver_local_root_dir=${_parts[0]:/}
+    driver_local_root_dir=${_parts[0]-/}
     current_prefix=${driver_local_root_dir%/}
     current_driver_local=yes
-    current_driver_sysconf_update=no
-    nef_log "driver_local_root_dir = $driver_local_root_dir"
-    nef_log "driver_local_sysconf_dir = $driver_local_sysconf_dir"
-    # [ -d "$driver_local_root_dir" ] || nef_fatal "root directory doe"
+    current_driver_sysconf_update=yes
 }
 driver_local_status() {
     nef_log "Hostname: $(hostname)"
     nef_log "Sysconf root install directory: $driver_local_root_dir"
-    nef_log "Sysconf directory: $driver_local_sysconf_dir"
 }
 driver_local_create() {
-        # mkdir -p "$driver_local_sysconf"
-        mkdir -p "$driver_local_root_dir"
+    # mkdir -p "$driver_local_sysconf"
+    mkdir -p "$driver_local_root_dir"
     # true
 }
 driver_local_exec() {
-    driver_common_local_exec --directory "$driver_local_sysconf_dir" "$@"
+    driver_common_local_exec "$@"
 }
 
 ################################################################################
@@ -630,12 +643,12 @@ driver_local_exec() {
 #
 # This driver uses the 'ssh' command to forward 'attach' commands to the specified
 # SSH server. The "ssh:USER@HOST" syntax designates the usual user and host that
-# is given to the 'ssh' command. It can be HOST only and can use ssh_config host
-# definitions.
+# is given to the 'ssh' command. It can be HOST only and can use ssh_config(5)
+# host definitions.
 #
 # The GIT_SSH_COMMAND environment variable can be set to override the SSH command
 # (and optional arguments). Example:
-#    $ GIT_SSH_COMMAND='ssh -i git_id' sysconf-target status ssh:user@host"
+# $ GIT_SSH_COMMAND='ssh -i git_id' sysconf-target status ssh:user@host"
 #
 # $ sysconf-target init   ssh:USER@HOST SYSCONF_DIRECTORY
 #
@@ -947,15 +960,34 @@ HINT: for information, run: $nef_command_name drivers docker"
     driver_docker_image=${_parts[1]}
 }
 driver_docker_status() {
-    if [ -n "$driver_docker_container" ]; then
-        docker ps -a | grep -E "^(CONTAINER|0574fc5c8daf)"
-    fi
     if [ -n "$driver_docker_image" ]; then
-        false ## TODO
+        docker images --all | grep -E " $driver_docker_image |^REPOSITORY"
+        [ $nef_opt_show_verbose = yes ] && docker inspect $driver_docker_image
+    fi
+    if [ -n "$driver_docker_container" ]; then
+        docker ps -a | grep -E "^(CONTAINER|$driver_docker_container)"
+        [ $nef_opt_show_verbose = yes ] && docker inspect $driver_docker_container
     fi
 }
 driver_docker_create() {
-    false ## TODO
+    driver_dockerfile_dir=$(mktemp -d)
+    driver_dockerfile_create
+}
+driver_docker_create_end() {
+    cd $driver_dockerfile_dir
+    local _opts=
+    [ -n "$driver_docker_image" ] && _opts="--tag=$driver_docker_image"
+    docker build $_opts \
+        || nef_fatal "failed to build the Dockerimage. Dockerfile directory is: $driver_dockerfile_dir"
+    local _image_id=$(docker images | head -n 2 | tail -n +2 | awk '{print $3}')
+    nef_log "Succefully build Docker image ID: $_image_id"
+
+    if [ -n "$driver_docker_container" ]; then
+        local _container_id=$(docker run -d "--name=$driver_docker_container" $_image_id)
+        [ $? -ne 0 ] && nef_fatal "Could not run Docker container (daemon) from image: $_image_id"
+        nef_log "Created container ID: $_container_id"
+    fi
+
 }
 driver_docker_exec() {
     local _argv=()
@@ -1040,7 +1072,7 @@ EOF
 
 }
 driver_dockerfile_exec() {
-    driver_common_local_exec --directory "$driver_dockerfile_dir" "$@"
+    driver_common_local_exec "$@"
 }
 
 

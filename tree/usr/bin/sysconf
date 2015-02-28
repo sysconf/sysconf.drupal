@@ -135,6 +135,11 @@ chdir_confpath()
     }
 
     cd $confpath
+    if [ -f target ]; then
+        targetpath=$(cat target)
+    else
+        targetpath=$(cd .. && pwd)
+    fi
 }
 
 # Util: remove $confpath/compiled and mkdir again
@@ -183,8 +188,10 @@ compile_conf_rec()
 # Used by commands "install" and "update"
 install_compiled()
 {
-    nef_log "Installing files from: $confpath/compiled"
-    local_cp -r $confpath/compiled/* / || nef_fatal "copy failed"
+    chdir_confpath
+
+    nef_log "Installing files from '$confpath/compiled' to '$targetpath'"
+    local_cp -r $confpath/compiled/* $targetpath || nef_fatal "copy failed"
 }
 
 load_environment()
@@ -404,10 +411,9 @@ self=$(cd `dirname "${BASH_SOURCE[0]}"` && pwd)/`basename "${BASH_SOURCE[0]}"`
 confpath="$SYSCONF_PATH"
 
 if test "$confpath" = ""; then
-    #confpath=`dirname "$self"`
-    confpath=/sysconf
+    script_dir=$(dirname $(readlink -f $0))
+    confpath=$(cd "$script_dir/../../../.." && pwd)
 fi
-
 export PATH=/sbin:/usr/sbin:$PATH
 export LANGUAGE=C LC_ALL=C
 
