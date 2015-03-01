@@ -181,7 +181,8 @@ The file actual/deps is missing or not readable. Are you sure it is a sysconf di
 
                     [ -n "$_output" ] && nef_fatal "Git work dir must be clean from HEAD: $script_init_sysconf_dir
 
-HINT: run 'git status' and 'git commit' to save changes, or pass --git-ignore-changes"
+HINT: run 'git status' and 'git commit' to save changes, or pass
+--git-ignore-changes or --no-git"
                 fi
             fi
         fi
@@ -543,7 +544,7 @@ driver_common_local_exec() {
 #
 # $ sysconf-target init   local:$HOME
 #
-#     As an unpriviledged user, install Sysconf to our HOME directory and use
+#     As an unprivileged user, install Sysconf to our HOME directory and use
 #     ~/sysconf/ to store the Sysconf layers.
 #     This makes sense for *user* Sysconf layers (typically for managing user
 #     settings, .bashrc and the like).
@@ -694,7 +695,7 @@ driver_lxc_check_env() {
         if [ -n "$error" ]; then
             nef_log "Error: $error"
             nef_log "There are 4 files you need to update (only once) for LXC"
-            nef_log "to run properly as unpriviledged user '$user_name'."
+            nef_log "to run properly as unprivileged user '$user_name'."
             nef_log ""
             nef_log "You can fix them automatically with the commands below:"
             cat <<MEOF >&2
@@ -1105,6 +1106,7 @@ driver_vbox_status() {
 }
 driver_vbox_create() {
     nef_fatal "action not implemented (yet) for this driver: init"
+    # vboxmanage import /tmp/DebianWheezyTemplate.ova --vsys 0 --vmname mydebian --cpus 2 --memory 1024
 }
 driver_vbox_exec() {
     local _argv=()
