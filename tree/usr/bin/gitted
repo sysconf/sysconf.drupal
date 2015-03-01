@@ -342,21 +342,18 @@ script_command_commit() {
 #       Doing this and then "gitted commit" will save the current state onto
 #       the commit given to "gitted reset".
 #
-#       Use with --coming to accept the next push on <state branch> like pure Git.
+#       Use while pushing to accept the next push on <state branch> like pure Git.
 #
 #   --hard
 #       Reinitialize working state from given <commit> or HEAD.
 #       Any changes are lost (use "gitted status" for checking).
 #
-#       Use with --coming to get the next push on <state branch> to fully overwrite
-#       the working state.
+#       Use while pushing to <state branch> to fully overwrite the working state.
 #
 #   --keep
 #       If the working state had not changed since HEAD, update it from the new
 #       <commit> and update the Git branch ref.
 #       If any change is to be committed, fail with error and do not update the Git branch.
-#
-#       --coming is useless here, as --keep is the defaut for pushes anyway.
 #
 #   --merge
 #       Ask the state driver to make a smart, but safe, merge of the working state
@@ -367,7 +364,7 @@ script_command_commit() {
 #       For example, MySQL state changes may affect some tables while other
 #       tables can be updated to new HEAD.
 #
-#       Use with --coming to make the next push on <state branch> "smarter", by
+#       Use while pushing on <state branch> to get a "smarter" behaviour, by
 #       trying to merge the push instead of rejecting it in case of "dirty state".
 #
 # Options can be given at any position:
