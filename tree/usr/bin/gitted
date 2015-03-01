@@ -332,17 +332,6 @@ script_command_commit() {
 # an attempt is made to update the working state to <commit>, behaving according
 # to <mode> like explained below.
 #
-# Otherwise, all ch *working state* of each <state branches> is reset to the state
-# where it was at the time of
-#
-# <state branch> is reset to <commit> (if not HEAD) and <mode> tells what to do
-# with the working state. If <mode> is omitted, defaults to "--keep".
-#
-# --coming changes the behaviour: nothing is done yet but options are remembered
-# for a later git-push operation that implies <state branch>. Indeed, any push
-# operation on a <state branch> also triggers a "gitted reset" through the
-# "update" hook in order to keep it in sync.
-#
 # The <mode> must be one of the following, or defaults to --keep:
 #
 #   --soft
