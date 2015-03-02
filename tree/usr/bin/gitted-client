@@ -405,6 +405,8 @@ script_server_command() {
     local _command="$1"; shift
     local _target=
 
+    . "$(git --exec-path)/git-parse-remote"
+
     [ -z "$1" ] \
         && nef_fatal_usage_command "$_command" "missing target argument"
 
