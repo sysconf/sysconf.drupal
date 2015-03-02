@@ -47,7 +47,6 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 # Initialise <target> from <sysconf-dir>
 #
 #   <target>            Target spec in the form of "driver:name"
-#       To get the list of available drivers, run the "dump-drivers" command.
 #       More information about this on root help.
 #
 #   <sysconf-dir>       Local sysconf directory to initialize on target,
@@ -496,7 +495,7 @@ target_load() {
     declare -f driver_${current_driver}_load >/dev/null \
         || nef_fatal "invalid target driver: ${current_driver}
 
-HINT: to print a list of available drivers, run: $0 drivers"
+HINT: to print a list of available drivers, run: $0 (without arguments)"
     driver_${current_driver}_load
 }
 
@@ -600,7 +599,7 @@ driver_local_exec() {
 # (and optional arguments). Example:
 # $ GIT_SSH_COMMAND='ssh -i git_id' sysconf-target status ssh:user@host"
 #
-# $ sysconf-target init   ssh:USER@HOST SYSCONF_DIRECTORY
+# $ sysconf-target init   ssh:USER@HOST
 #
 #     Initialise or fix (with --force) the remote HOST system as identity USER.
 #     Most often with 'init', USER must be "root" to modify /sysconf.
@@ -613,9 +612,7 @@ driver_local_exec() {
 driver_ssh_load() {
     driver_ssh_userhost=$current_target_id
 
-    if [ -z "$GIT_SSH_COMMAND" ]; then
-        GIT_SSH_COMMAND=ssh
-    fi
+    [ -z "$GIT_SSH_COMMAND" ] && GIT_SSH_COMMAND=ssh
 }
 driver_ssh_status() {
     ssh -v $driver_ssh_userhost -- true 2>&1 | grep -E "auth|Auth|key|version"
@@ -651,7 +648,7 @@ driver_ssh_exec() {
 # The "lxc" driver is used to manage the LXC container CONTAINER_NAME.
 # Historically, it was the first driver, the one that inspired sysconf-target.
 #
-# $ sysconf-target init lxc:CONTAINER SYSCONF_SOURCE_DIR
+# $ sysconf-target init   lxc:CONTAINER
 #
 #     Creates and/or fix the given container about Sysconf, using
 #     lxc-create(1), lxc-start(1) and lxc-attach(1).
@@ -863,7 +860,7 @@ driver_lxc_refresh_state() {
 # image and the "attach" command will run a new temporary container and then
 # save it to a new image with the same name, using 'docker commit'.
 #
-# $ sysconf-target init   docker:CONTAINER:IMAGE SYSCONF_SOURCE_DIR
+# $ sysconf-target init   docker:CONTAINER:IMAGE
 #
 #     Build the Docker image named IMAGE and then run a new Docker container named
 #     CONTAINER.
@@ -874,19 +871,18 @@ driver_lxc_refresh_state() {
 #     If the container is stopped, it is started. If it does not exist, it is
 #     created with 'docker run' with a new image created with 'docker build'.
 #
-# $ sysconf-target init   docker:CONTAINER SYSCONF_SOURCE_DIR
+# $ sysconf-target init   docker:CONTAINER
 #
 #     Same as "docker:CONTAINER:IMAGE" except the Docker image is not named.
-#     The ID of the newly created image is printed to the standard output.
-#     Run 'sysconf-target status docker:CONTAINER' for information.
+#     Run 'sysconf-target status docker:CONTAINER --driver' for information.
 #
 # $ sysconf-target attach docker:CONTAINER -- COMMAND
 #
 #     Same as "docker:CONTAINER:IMAGE" except the Docker image is not named.
 #     If need be, the image that is built has no tag, just an ID.
-#     Run 'sysconf-target status docker:CONTAINER' for information.
+#     Run 'sysconf-target status docker:CONTAINER --driver' for information.
 #
-# $ sysconf-target init   docker::IMAGE SYSCONF_SOURCE_DIR
+# $ sysconf-target init   docker::IMAGE
 #
 #     Create the named Docker image. It is like running 'init dockerfile:tmp/dir'
 #     followed by 'docker build -t IMAGE'. No container is created appart from
@@ -1003,7 +999,7 @@ driver_docker_exec() {
 #
 # See also the 'docker' driver, which works with live Docker containers and images.
 #
-# $ sysconf-target init dockerfile:DIRECTORY SYSCONF_SOURCE_DIR
+# $ sysconf-target init dockerfile:DIRECTORY
 #
 #     The 'init' command creates DIRECTORY and generates the "Dockerfile" inside
 #     with a copy of Sysconf. Run 'docker build <directory>' to build
