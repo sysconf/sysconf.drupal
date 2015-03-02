@@ -49,8 +49,9 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 #   <target>            Target spec in the form of "driver:name"
 #       More information about this on root help.
 #
-#   <sysconf-dir>       Local sysconf directory to initialize on target,
-#       defaults to ".". tar(1) is used to copy <sysconf-dir> to the target.
+#   <sysconf-dir> defaults to "." (current directory)
+#       It is a local sysconf directory that is used to initialize target,
+#       and copied to it using tar(1).
 #
 #       If Git is available and <sysconf-dir> is a Git working dir,
 #       the GIT SPECIAL BEHAVIOR is enabled unless --no-git is given.
