@@ -1,0 +1,40 @@
+#!/bin/bash
+#
+
+. /usr/share/gitted/shell-driver || exit 2
+
+# Defaults:
+
+
+################################################################################
+# Driver / shell-driver interface
+
+gitted_driver_list() {
+    env | grep ^GITTED >&2
+    return 1
+    sysconf-target status 'lxc:*'
+}
+
+gitted_driver_status_code() {
+    false
+}
+
+gitted_driver_status_list() {
+    false
+}
+
+gitted_driver_status_diff() {
+    false
+}
+
+gitted_driver_commit() {
+    false
+}
+
+gitted_driver_reset() {
+    false
+}
+
+################################################################################
+
+gitted_driver_run "$@"
