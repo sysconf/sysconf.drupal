@@ -90,15 +90,13 @@ NEF_LOG_NO_PREFIX=yes
 #               will vary across drivers, be it like 'git diff' or whatever.
 #               Some drivers won't support it and will print a --list instead.
 #
-##
-#   --existing  (OBSOLETE, NOT IMPLEMENTED)
-#               Match branches against real /local.repository.git/refs/heads/
-#               instead of state configuration from /etc/gitted/state.
-#               Any missing branch triggers an error.
+#   --ref <commit>
+#               Use <commit> as the base of comparison, instead of current branch value.
+#               <commit> must resolve to a valid Git commit (can be a branch or ref name).
 ##
 script_command_status() {
     local _view=
-    local _expand_opts=
+    local _ref=
     local _argv=()
 
     while [ -n "$1" ]; do
@@ -115,7 +113,7 @@ script_command_status() {
                 case $1 in -vq) _view=quiet ;; -vb) _view=branches ;; -vl) __view=list ;; -vd) _view=diff ;; esac
                 shift
                 ;;
-            # --existing) _expand_opts="$_expand_opts --existing"; shift ;;
+            --ref) _ref="$2"; shift 2 ;;
             -h|--help) script_command_help status; return ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
@@ -124,6 +122,13 @@ script_command_status() {
 
     if [ -z "$_view" ]; then
         [ "${#_argv[@]}" -eq 0 ] && _view=branches || _view=list
+    fi
+    local _ref_commit=
+    if [ -n "$_ref" ]; then
+        [[ "$_ref" =~ ^0000+$ ]] && _ref=$GITTED_NULL_SHA1
+        [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command status "state branch argument is mandatory with --ref"
+        _ref_commit=$(git rev-parse --verify "$_ref") \
+            || nef_fatal_usage_command status "invalid --ref <commit> argument: $_ref"
     fi
     [ "${#_argv[@]}" -eq 0 ] && _argv=('**')
 
@@ -143,6 +148,7 @@ script_command_status() {
 
             export GITTED_CONFIG_DRIVER_ACTION=status
             export GITTED_CONFIG_STATUS_REPORT=$_view
+            [ -n "$_ref_commit" ] && GITTED_CONFIG_STATE_COMMIT=$_ref_commit
 
             _output=$(script_call_driver)
             local _status=$?

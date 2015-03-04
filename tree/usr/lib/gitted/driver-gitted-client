@@ -49,9 +49,8 @@ gitted_driver_status_code() {
     # nef_log "driver_target_name: $driver_target_name"
     # nef_log "driver_target_branch: $driver_target_branch"
     # nef_log "driver_target: $driver_target"
-    exit 1
 
-    local _state=$(sysconf-target status --state "$_target" | cut -d' ' -f2)
+    local _state=$(sysconf-target status --state "$driver_target" | cut -d' ' -f2)
     # nef_log "State of target '$_target' is: $_state"
 
     if [ $_state = missing ]; then
@@ -59,22 +58,26 @@ gitted_driver_status_code() {
         return 7 # 7=deletion
     fi
 
-    [ $GITTED_CONFIG_STATE_COMMIT = $GITTED_NULL_SHA1 ] && return 6      # 6=addition
+    gitted-client status "$driver_target" "$driver_target_branch" --ref $GITTED_CONFIG_STATE_COMMIT --quiet
+    local _status=$?
 
-    # At this point: target machine is NOT MISSING, NOR IS the local branch
-    [ $_state = stopped -o $_state = missing ] && nef_fatal "Not checking $_state target: $_target"
+    return $_status
 
-    if [ $driver_remote_commit = $GITTED_CONFIG_STATE_COMMIT \
-        -o $_always_check_remote = yes ]; then
+    # [ $GITTED_CONFIG_STATE_COMMIT = $GITTED_NULL_SHA1 ] && return 6      # 6=addition
 
-        gitted_driver_check_remote
-        if [ "$remote_head" = $driver_remote_branch ]; then
-            driver_local_changes=$(remote_local_git status --porcelain --untracked-files=all)
-            [ -n "$driver_local_changes" ] && return 5
-        fi
-    fi
-    [ $driver_remote_commit != $GITTED_CONFIG_STATE_COMMIT ] && return 5 # 5=modifications
+    # # At this point: target machine is NOT MISSING, NOR IS the local branch
+    # [ $_state = stopped -o $_state = missing ] && nef_fatal "Not checking $_state target: $_target"
 
+    # if [ $driver_remote_commit = $GITTED_CONFIG_STATE_COMMIT \
+    #     -o $_always_check_remote = yes ]; then
+
+    #     gitted_driver_check_remote
+    #     if [ "$remote_head" = $driver_remote_branch ]; then
+    #         driver_local_changes=$(remote_local_git status --porcelain --untracked-files=all)
+    #         [ -n "$driver_local_changes" ] && return 5
+    #     fi
+    # fi
+    # [ $driver_remote_commit != $GITTED_CONFIG_STATE_COMMIT ] && return 5 # 5=modifications
 }
 
 gitted_driver_status_list() {
