@@ -23,7 +23,6 @@ gitted_driver_list() {
     done
 }
 
-# Just check if
 gitted_driver_status_code() {
     local _always_check_remote=no
     while [ -n "$1" ]; do
@@ -325,6 +324,7 @@ gitted_driver_reset() {
 
 
 ################################################################################
+# PRIVATE UTILS:
 
 # usage: echo "string(s)" | driver_rewrite "from" "to"
 driver_rewrite() {
