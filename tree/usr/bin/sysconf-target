@@ -29,6 +29,7 @@ if [ $? -ne 0 ]; then
     echo "      (symlinking works; sysconf being installed in /usr also works)" >&2
     exit 2
 fi
+script_warn_running_as_root=no  # only for the "init" command
 
 
 ################################################################################
@@ -108,6 +109,12 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 #        "git-user"     Git config settings user.name and user.email are copied
 #                       into ~root/.gitconfig inside target
 #
+#        "lxc:unconfined"   Enable container to create nested containers,
+#                       by adding "lxc.aa_profile = unconfined" to the container
+#                       configuration. This is only supported by the LXC driver.
+#                       Warning: this will make container processes able to escape
+#                       escape the isolation; check: lxc.container.conf(5).
+#
 #   --lxc-create-opts '<options>'       Pass <options> as arguments to lxc-create
 #
 #        Example:  --lxc-create-opts "-B lvm --vgname vgname1 --fssize 4G"
@@ -124,6 +131,7 @@ script_command_init() {
     local _force=no
     local _custom=
     script_init_distrib=
+    script_warn_running_as_root=yes
 
     while [ -n "$1" ]; do
         case "$1" in
@@ -196,7 +204,7 @@ HINT: run 'git status' and 'git commit' to save changes, or pass
         script_init_distrib=$SYSCONF_TARGET_DEFAULT_DISTRIB
     fi
 
-    driver_${current_driver}_create
+    driver_${current_driver}_create "$_custom"
 
     # Copy SSH public key (--custom ssh-pubkey)
     if echo $_custom | grep -Eq "(^|,)ssh-pubkey($|,)"; then
@@ -344,7 +352,7 @@ script_command_attach() {
     driver_${current_driver}_exec --hybrid "${_options[@]}" "${_argv[@]}"
 }
 
-# command: status <target> [--state][--driver] [--system] [--sysconf]
+# command: status <target> [--state] [--driver] [--system] [--sysconf]
 #
 # Show the status of given target
 #
@@ -379,7 +387,7 @@ script_command_status() {
 
     # [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command status "missing argument"
     # [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command status "too many arguments"
-    script_warn_running_as_root=no
+
     local _ftarget
     for _ftarget in "${_argv[@]}"; do
         local _targets="."
@@ -759,8 +767,11 @@ driver_lxc_list() {
     lxc-ls
 }
 driver_lxc_create() {
+    local _custom="$1"
     # false
     # lxc-create
+    local _configpath=$(lxc-config lxc.lxcpath)/$driver_lxc_container_name/config
+
     if [ "$driver_target_state" = missing ]; then
         local distrib=$(echo $script_init_distrib | cut -d: -f1)
         local release=$(echo $script_init_distrib | cut -d: -f2)
@@ -803,14 +814,23 @@ driver_lxc_create() {
             b=$(printf "%x" $b)
             c=$(printf "%x" $c)
             local _newmac=00:16:3e:$a:$b:$c
-            local _configpath=$(lxc-config lxc.lxcpath)/$driver_lxc_container_name/config
 
             sed -i s/00:16:3e:ff:ff:ff/$_newmac/g $_configpath \
                 && nef_log -v "Fixed $_configpath with MAC address: $_newmac"
         fi
     else
         nef_log "Container exists already, not creating: $driver_lxc_container_name"
-        return 1
+    fi
+    # Apply lxc:unconfined custom option (--custom ssh-pubkey from the "init" command)
+    if echo $_custom | grep -Eq "(^|,)lxc:unconfined($|,)"; then
+        if grep -qE "^ *lxc.aa_profile *= *unconfined *(#.*)?" $_configpath; then
+            nef_log -v "Not fixing container config for lxc:confined (already set): $_configpath"
+        else
+            nef_log -v "Fixing container config for lxc:confined: $_configpath"
+            echo -e "\n# Added by $nef_command_name (option --custom lxc:unconfined)\nlxc.aa_profile = unconfined" \
+                >>$_configpath \
+                || nef_fatal "Could not fix container config for lxc:confined: $_configpath"
+        fi
     fi
 }
 
