@@ -345,10 +345,11 @@ script_command_attach() {
     driver_${current_driver}_exec --hybrid "${_options[@]}" "${_argv[@]}"
 }
 
-# command: status <target> [--driver] [--system] [--sysconf]
+# command: status <target> [--state][--driver] [--system] [--sysconf]
 #
 # Show the status of given target
 #
+#   --state     Show (only) the target name and state
 #   --driver    Show (only) target driver-specific information
 #   --system    Show (only) target system informatioo
 #   --sysconf   Show (only) target sysconf information
@@ -358,6 +359,7 @@ script_command_status() {
     local _command=
     local _usage=0
     local _info_all=yes
+    local _info_state=yes
     local _info_driver=no
     local _info_system=no
     local _info_sysconf=no
@@ -365,6 +367,7 @@ script_command_status() {
 
     while [ -n "$1" ]; do
         case "$1" in
+            --state) _info_state=yes; _info_all=no; shift ;;
             --driver) _info_driver=yes; _info_all=no; shift ;;
             --system) _info_system=yes; _info_all=no; shift ;;
             --sysconf) _info_sysconf=yes; _info_all=no; shift ;;
@@ -375,72 +378,95 @@ script_command_status() {
         esac
     done
 
-    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command status "missing argument"
-    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command status "too many arguments"
+    # [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command status "missing argument"
+    # [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command status "too many arguments"
+    script_warn_running_as_root=no
+    local _ftarget
+    for _ftarget in "${_argv[@]}"; do
+        local _targets="."
 
-    target_load "${_argv[0]}"
+        target_load "$_ftarget"
 
-    local _available=yes
-    [ $driver_target_state = paused -o $driver_target_state = stopped \
-        -o $driver_target_state = missing ] && _available=no
-
-    if [ $_available = no ]; then
-        [ $_info_system = yes ] && nef_fatal -- "--system not available as target state is: $driver_target_state"
-        [ $_info_sysconf = yes ] && nef_fatal -- "--system not available as target state is: $driver_target_state"
-    fi
-    NEF_LOG_NO_PREFIX=yes
-
-    [ $nef_opt_show_verbose != yes ] \
-        && nef_log "(run with -v to get more information)
-"
-
-    if [ $_info_driver = yes -o $_info_all = yes ]; then
-        nef_log -- "---- DRIVER STATUS -------------------------------------------------------------"
-        echo "Driver: $current_driver"
-        echo "State: $driver_target_state"
-        echo "Available: $_available"
-        driver_${current_driver}_status
-        nef_log
-    fi
-    if [ $_info_system = yes -o $_info_all = yes ] && [ $_available = yes ]; then
-        nef_log -- "---- SYSTEM STATUS  ------------------------------------------------------------"
-        nef_log "Connection user: $(driver_${current_driver}_exec --hybrid id)"
-        (driver_${current_driver}_exec --hybrid ps aux)
-        (driver_${current_driver}_exec --hybrid df -h | grep -Ev " /dev/| /run")
-        (driver_${current_driver}_exec --hybrid netstat -xtulpn)
-        [ $nef_opt_show_verbose = yes ] \
-            && (driver_${current_driver}_exec --hybrid netstat -xtupn)
-        [ $nef_opt_show_verbose = yes ] \
-            && (driver_${current_driver}_exec --hybrid dpkg -l openssh git)
-        nef_log
-    fi
-    if [ $_info_sysconf = yes -o $_info_all = yes ] && [ $_available = yes ]; then
-        nef_log -- "---- SYSCONF STATUS ------------------------------------------------------------"
-
-        (driver_${current_driver}_exec --hybrid test -d /sysconf) \
-            && local _sysconf=YES || local _sysconf=NO
-        nef_log "/sysconf directory present: $_sysconf"
-
-        if [ $_sysconf = YES ]; then
-            (driver_${current_driver}_exec --hybrid test -d /sysconf/.git) \
-                && local _git=YES || local _git=NO
-            nef_log "/sysconf is Git-enabled: $_sysconf"
-            if [ $nef_opt_show_verbose = yes ]; then
-                (driver_${current_driver}_exec --hybrid -c "cd ${current_prefix}/sysconf && git log -1 | cat") \
-                    | nef_log_pipe "Git HEAD:"
-                (driver_${current_driver}_exec --hybrid -c "cd ${current_prefix}/sysconf && git status --porcelain") \
-                    | nef_log_pipe "Git status:"
-            fi
-            nef_log
-            nef_log "Composition of /sysconf:"
-            (driver_${current_driver}_exec --hybrid -c 'cd ${current_prefix}/sysconf && ls -ld */* | grep -v " compiled/"')
-            if [ $nef_opt_show_verbose = yes ]; then
-                nef_log
-                nef_log "Sysconf profile trees:"
-                (driver_${current_driver}_exec --hybrid -c 'cd ${current_prefix}/sysconf && find */tree -not -type d | xargs ls -ld')
-            fi
+        if [ $driver_target_state = list ]; then
+            _targets=$(driver_${current_driver}_list)
         fi
-    fi
+
+        local _target
+        for _target in $_targets; do
+
+            if [ "$_target" = . ]; then
+                _target=$_ftarget
+            else
+                target_load "${current_driver}:${_target}"
+            fi
+            # target_load "${_argv[0]}"
+
+            local _available=yes
+            [ $driver_target_state = paused -o $driver_target_state = stopped \
+                -o $driver_target_state = missing ] && _available=no
+
+            if [ $_available = no ]; then
+                [ $_info_system = yes ] && nef_fatal -- "--system not available as target state is: $driver_target_state"
+                [ $_info_sysconf = yes ] && nef_fatal -- "--system not available as target state is: $driver_target_state"
+            fi
+            NEF_LOG_NO_PREFIX=yes
+
+            if [ $_info_state = yes ]; then
+                echo "$current_target $driver_target_state"
+            else
+                [ $nef_opt_show_verbose != yes ] \
+                    && nef_log "(run with -v to get more information)
+"
+            fi
+            if [ $_info_driver = yes -o $_info_all = yes ]; then
+                nef_log -- "---- DRIVER STATUS -------------------------------------------------------------"
+                echo "Driver: $current_driver"
+                echo "State: $driver_target_state"
+                echo "Available: $_available"
+                driver_${current_driver}_status
+                nef_log
+            fi
+            if [ $_info_system = yes -o $_info_all = yes ] && [ $_available = yes ]; then
+                nef_log -- "---- SYSTEM STATUS  ------------------------------------------------------------"
+                nef_log "Connection user: $(driver_${current_driver}_exec --hybrid id)"
+                (driver_${current_driver}_exec --hybrid ps aux)
+                (driver_${current_driver}_exec --hybrid df -h | grep -Ev " /dev/| /run")
+                (driver_${current_driver}_exec --hybrid netstat -xtulpn)
+                [ $nef_opt_show_verbose = yes ] \
+                    && (driver_${current_driver}_exec --hybrid netstat -xtupn)
+                [ $nef_opt_show_verbose = yes ] \
+                    && (driver_${current_driver}_exec --hybrid dpkg -l openssh git)
+                nef_log
+            fi
+            if [ $_info_sysconf = yes -o $_info_all = yes ] && [ $_available = yes ]; then
+                nef_log -- "---- SYSCONF STATUS ------------------------------------------------------------"
+
+                (driver_${current_driver}_exec --hybrid test -d /sysconf) \
+                    && local _sysconf=YES || local _sysconf=NO
+                nef_log "/sysconf directory present: $_sysconf"
+
+                if [ $_sysconf = YES ]; then
+                    (driver_${current_driver}_exec --hybrid test -d /sysconf/.git) \
+                        && local _git=YES || local _git=NO
+                    nef_log "/sysconf is Git-enabled: $_sysconf"
+                    if [ $nef_opt_show_verbose = yes ]; then
+                        (driver_${current_driver}_exec --hybrid -c "cd ${current_prefix}/sysconf && git log -1 | cat") \
+                            | nef_log_pipe "Git HEAD:"
+                        (driver_${current_driver}_exec --hybrid -c "cd ${current_prefix}/sysconf && git status --porcelain") \
+                            | nef_log_pipe "Git status:"
+                    fi
+                    nef_log
+                    nef_log "Composition of /sysconf:"
+                    (driver_${current_driver}_exec --hybrid -c 'cd ${current_prefix}/sysconf && ls -ld */* | grep -v " compiled/"')
+                    if [ $nef_opt_show_verbose = yes ]; then
+                        nef_log
+                        nef_log "Sysconf profile trees:"
+                        (driver_${current_driver}_exec --hybrid -c 'cd ${current_prefix}/sysconf && find */tree -not -type d | xargs ls -ld')
+                    fi
+                fi
+            fi
+        done
+    done
 }
 
 # command: help [<command> | <driver>:]
@@ -497,7 +523,14 @@ target_load() {
         || nef_fatal "invalid target driver: ${current_driver}
 
 HINT: to print a list of available drivers, run: $0 (without arguments)"
-    driver_${current_driver}_load
+
+    if [ "$current_target_id" = '*' ]; then
+        declare -f driver_${current_driver}_list >/dev/null \
+            || nef_fatal "target driver does not support globbing: ${current_driver}"
+        driver_target_state=list
+    else
+        driver_${current_driver}_load
+    fi
 }
 
 driver_common_local_exec() {
@@ -586,7 +619,7 @@ driver_local_exec() {
 }
 
 ################################################################################
-# DRIVER: ssh:USER@HOST                 | Connect to an SSH server
+# DRIVER: ssh:USER@HOST                 | Connect to a SSH server
 #
 # OpenSSH (OpenBSD Secure Shell) is a set of computer programs that provides
 # encrypted communication sessions over a computer network using the SSH protocol.
@@ -674,7 +707,8 @@ driver_lxc_check_env() {
         exit 3
     fi
     if [ $(id -u) -eq 0 ]; then
-        nef_log "RUNNING AS ROOT! Notice: you can work as an unprivileged user as well."
+        [ "$script_warn_running_as_root" = no ] \
+            || nef_log "RUNNING AS ROOT! Notice: you can work as an unprivileged user as well."
     else
         # unprivileged mode -- thanks to https://www.stgraber.org/2014/01/17/lxc-1-0-unprivileged-containers/
         user_name=$(id -un)
@@ -722,7 +756,9 @@ driver_lxc_status() {
     nef_log "Container status: $driver_target_state"
     [ $nef_opt_show_verbose = yes ] && lxc-info -n $driver_lxc_container_name
 }
-
+driver_lxc_list() {
+    lxc-ls
+}
 driver_lxc_create() {
     # false
     # lxc-create
@@ -979,7 +1015,7 @@ driver_docker_exec() {
     nef_log -d "Container ID: $_container_id"
     local _commit_id=
     _commit_id=$(docker commit $_container_id $driver_docker_image) \
-         || nef_log "'docker commit' failed with status $?"
+        || nef_log "'docker commit' failed with status $?"
     nef_log -v "Succefully committed Docker container to image <$driver_docker_image> ID: $_commit_id"
     local _deleted_id=
     _deleted_id=$(docker rm -f $_container_id) \
