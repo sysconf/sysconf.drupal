@@ -783,7 +783,7 @@ script_expand_state_branches() {
 
     while [ -n "$1" ]; do
 
-        [[ "$1" =~ ^(([-a-zA-Z._]+|\*\*?)(/|$))+$ ]] \
+        [[ "$1" =~ ^(([-a-zA-Z0-9._]+|\*\*?)(/|$))+$ ]] \
             || nef_fatal_usage_command "$_usage_name" "invalid <state branch> pattern: $1"
 
         [[ "$1" =~ /$ ]] \
@@ -829,27 +829,36 @@ script_expand_state_branches() {
                     # nef_log "Expanding: $1: calling driver: $_branch"
                     (
                         script_load_state_config $_branch
-                        export GITTED_CONFIG_DRIVER_ACTION=list
-                        local _nested_branch=
-                        local _nested_branches=
-                        _nested_branches=$(script_call_driver)
-
-                        if  [ $? -eq 2 ]; then  ## exit code 2 means dirMode is disabled:
-
-                            [[ $_branch =~ $_regex ]] && echo $_branch
+                        local _status=$?
+                        if [ $_status = 2 ]; then
+                            nef_log -v "State is NOT ENABLED (from config), ignoring: $_branch"
                         else
+                            if [ $_status -ne 0 ]; then
+                                nef_fatal --warn "could not load driver for branch, ignoring it: $_branch"
+                            else
+                                export GITTED_CONFIG_DRIVER_ACTION=list
+                                local _nested_branch=
+                                local _nested_branches=
+                                _nested_branches=$(script_call_driver)
 
-                            for _nested_branch in $_nested_branches; do
+                                if  [ $? -eq 2 ]; then  ## exit code 2 means dirMode is disabled:
 
-                                _last_branch=${_branch}/${_nested_branch}
-                                if [[ $_last_branch =~ $_regex ]]; then
-                                    # nef_log "Expanding: $1: to branch: $_last_branch (included)"
-                                    echo $_last_branch
-                                    # else
-                                    # nef_log "Expanding: $1: to branch: $_last_branch (filtered out)"
+                                    [[ $_branch =~ $_regex ]] && echo $_branch
+                                else
+
+                                    for _nested_branch in $_nested_branches; do
+
+                                        _last_branch=${_branch}/${_nested_branch}
+                                        if [[ $_last_branch =~ $_regex ]]; then
+                                            # nef_log "Expanding: $1: to branch: $_last_branch (included)"
+                                            echo $_last_branch
+                                            # else
+                                            # nef_log "Expanding: $1: to branch: $_last_branch (filtered out)"
+                                        fi
+                                    done
+                                    [ -n "$_nested_branch" ]
                                 fi
-                            done
-                            [ -n "$_nested_branch" ]
+                            fi
                         fi
                         # nef_log "NOTICE: Driver returns no branch on: $_branch"
                     )
@@ -946,6 +955,11 @@ script_load_state_config() {
             # fi
         fi
     done
+
+    if [ "$GITTED_CONFIG_STATE_ENABLED" = false ]; then
+        nef_log -v "State is NOT ENABLED (from config), ignoring: $_branch"
+        return 2
+    fi
 
     if [ -z "$GITTED_CONFIG_STATE_DRIVER" ]; then
         nef_fatal --warn "state branch is not configured: $1"

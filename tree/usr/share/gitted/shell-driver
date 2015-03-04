@@ -1,4 +1,4 @@
-# Framework structure for gitted drivers written in bash script  -*- shell-script -*-
+# Framework structure for gitted (v1) drivers written in bash script  -*- shell-script -*-
 
 if [ -z "$GITTED_CONFIG_STATE_DRIVER" ]; then
     echo "Should be runned by bin/gitted" >&2
