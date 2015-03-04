@@ -32,68 +32,87 @@ gitted_driver_list() {
             # else
             gitted-client status $_target  --branches | grep -v ^# | sed "s/^../$_name\//"
         fi
-    #| cut -d' ' -f1
+        #| cut -d' ' -f1
     done
 }
 
-gitted_driver_status_code() {
-    # nef_log -- ----- gitted_driver_status_code "$@"
-    # env | grep ^GITTED >&2; exit 0
+gitted_driver_status() {
+    driver_load_target
+
+    if [ $driver_target_state = missing ]; then
+        [ $GITTED_CONFIG_STATE_COMMIT = $GITTED_NULL_SHA1 ] && return
+        return 7 # 7=deletion
+    fi
+
+    gitted-client status "$driver_target" "$driver_target_branch" \
+        --ref $GITTED_CONFIG_STATE_COMMIT --$GITTED_CONFIG_STATUS_REPORT
+}
+
+gitted_driver_commit() {
+    driver_load_target
+
+    if [ $driver_target_state = missing ]; then
+
+        [ $GITTED_CONFIG_STATE_COMMIT = $GITTED_NULL_SHA1 ] \
+            && nef_fatal "Nothing to commit as branch is not present and target is missing: $driver_target"
+
+        if [ $GITTED_CONFIG_STATE_FORCE_COMMIT = true ]; then
+            echo $GITTED_NULL_SHA1
+        else
+            nef_fatal "Not committing branch to null without --force, as target is missing: $driver_target"
+        fi
+    fi
+
+    local _opts=()
+    [ -n "$GITTED_CONFIG_COMMIT_MESSAGE" ] && _opts=(
+        "${_opts[@]}" -m "$GITTED_CONFIG_COMMIT_MESSAGE"
+    )
+    # local _commit=
+    # _commit=$(
+    #     # stdout must go as stdout also redirected to stderr
+    #     (gitted-client commit "$driver_target" \
+    #         "$driver_target_branch" --stdout "${_opts[@]}" ) | tee >(cat)  >&2
+    #     exit ${PIPESTATUS[0]}
+    # )
+    # local _status=$?
+    # [ $_status -eq 0 ] \
+    #     || nef_fatal --status $? "gitted-client commit failed with status $? on target: $driver_target"
+    (
+        gitted-client commit "$driver_target" "$driver_target_branch" "${_opts[@]}" 2>&1
+        _status=$?
+        [ $_status = 2 ] && exit 0
+        [ $_status -eq 0 ] \
+            || nef_fatal --status $_status "gitted-client commit failed with status $_status on target: $driver_target"
+    ) | sed "s/^/${driver_target}: /" >&2
+    [ ${PIPESTATUS[0]} -eq 0 ] || exit ${PIPESTATUS[0]}
+
+    git fetch "ext::gitted-client %S $driver_target" "$driver_target_branch" >&2
+    git rev-parse --verify FETCH_HEAD
+}
+
+gitted_driver_reset() {
+    false
+}
+
+################################################################################
+# Utils
+
+driver_load_target() {
     driver_target_name=$(echo $GITTED_CONFIG_STATE_BRANCH | cut -d/ -f1)
     driver_target_branch=${GITTED_CONFIG_STATE_BRANCH:$((${#driver_target_name}+1))}
+
     local _target_name_uc=${driver_target_name^^}
     local _var=GITTED_CONFIG_TARGET_${_target_name_uc//-/_}_TARGET
-    local driver_target=${!_var}
+
+    driver_target=${!_var}
     [ -z "$driver_target" ] && driver_target=${GITTED_CONFIG_STATE_TARGET/\[\*\]/$driver_target_name}
 
     # nef_log "driver_target_name: $driver_target_name"
     # nef_log "driver_target_branch: $driver_target_branch"
     # nef_log "driver_target: $driver_target"
 
-    local _state=$(sysconf-target status --state "$driver_target" | cut -d' ' -f2)
-    # nef_log "State of target '$_target' is: $_state"
-
-    if [ $_state = missing ]; then
-        [ $GITTED_CONFIG_STATE_COMMIT = $GITTED_NULL_SHA1 ] && return
-        return 7 # 7=deletion
-    fi
-
-    gitted-client status "$driver_target" "$driver_target_branch" --ref $GITTED_CONFIG_STATE_COMMIT --quiet
-    local _status=$?
-
-    return $_status
-
-    # [ $GITTED_CONFIG_STATE_COMMIT = $GITTED_NULL_SHA1 ] && return 6      # 6=addition
-
-    # # At this point: target machine is NOT MISSING, NOR IS the local branch
-    # [ $_state = stopped -o $_state = missing ] && nef_fatal "Not checking $_state target: $_target"
-
-    # if [ $driver_remote_commit = $GITTED_CONFIG_STATE_COMMIT \
-    #     -o $_always_check_remote = yes ]; then
-
-    #     gitted_driver_check_remote
-    #     if [ "$remote_head" = $driver_remote_branch ]; then
-    #         driver_local_changes=$(remote_local_git status --porcelain --untracked-files=all)
-    #         [ -n "$driver_local_changes" ] && return 5
-    #     fi
-    # fi
-    # [ $driver_remote_commit != $GITTED_CONFIG_STATE_COMMIT ] && return 5 # 5=modifications
-}
-
-gitted_driver_status_list() {
-    false
-}
-
-gitted_driver_status_diff() {
-    false
-}
-
-gitted_driver_commit() {
-    false
-}
-
-gitted_driver_reset() {
-    false
+    driver_target_state=$(sysconf-target status --state "$driver_target" | cut -d' ' -f2)
+    # nef_log "State of target '$_target' is: $driver_target_state"
 }
 
 ################################################################################

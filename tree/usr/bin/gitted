@@ -241,6 +241,10 @@ script_command_status() {
 #   --existing
 #               Never create a branch which does not exist already in Git,
 #               fails with error instead.
+#
+#   --stdout
+#               Print successful commits on stdout, in plain lines in the form:
+#               <branch> 0cd54dedcda4d07fa48d24d54e55bc2098698c8e
 ##
 # Not implemented:
 #
@@ -256,6 +260,7 @@ script_command_commit() {
     local _author=
     local _allow_empty=false
     local _existing=no
+    local _stdout=no
     local _argv=()
 
     while [ -n "$1" ]; do
@@ -264,6 +269,7 @@ script_command_commit() {
             --author) _author="$2"; shift 2 ;;
             --allow-empty) _allow_empty=true; shift ;;
             --existing) _existing=yes; shift ;;
+            --stdout) _stdout=yes; shift ;;
             -h|--help) script_command_help commit; return ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
@@ -297,7 +303,8 @@ script_command_commit() {
             if [ $_status -eq 0 ]; then
                 [ -n "$_commit" ] || nef_fatal "driver commit returned 0 but commit SHA1 not printed
 "
-                echo "[${_state_branch} ${_commit:0:7}] Commit OK"
+                nef_log "[${_state_branch} ${_commit:0:7}] Commit OK"
+                [ $_stdout = yes ] && echo "${_state_branch} ${_commit}"
                 git update-ref $_tmp_ref/$_state_branch "$_commit"
 
             elif [ $_status -eq 2 ]; then
