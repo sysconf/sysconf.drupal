@@ -34,7 +34,6 @@ fi
 ################################################################################
 # DEFAULTS
 
-SYSCONF_TARGET_LIB_PREFIX=/usr/lib/sysconf/sysconf-target-
 SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 
 
