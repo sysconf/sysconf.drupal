@@ -330,8 +330,8 @@ gitted_driver_reset() {
 driver_rewrite() {
     local _from="${1//\//\\/}"
     local _to="${2//\//\\/}"
-    # echo running: sed -r "s/^${_from/\*/(.*)}$/${_to/\*/\1}/" >&2
-    sed -r "s/^${_from/\*/(.*)}$/${_to/\*/\1}/"
+    # echo running: sed -r "s/^${_from/\*/(.*)}$/${_to/\*/\\1}/" >&2
+    sed -r "s/^${_from/\*/(.*)}$/${_to/\*/\\1}/"
 }
 
 driver_git_fetch() {

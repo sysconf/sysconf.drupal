@@ -10,9 +10,9 @@
 # Driver / shell-driver interface
 
 gitted_driver_list() {
-    env | grep ^GITTED >&2
-    return 1
-    sysconf-target status 'lxc:*'
+    # env | grep ^GITTED >&2
+    # return 1
+    sysconf-target status 'lxc:*' --state >&2 # 2>/dev/null
 }
 
 gitted_driver_status_code() {
