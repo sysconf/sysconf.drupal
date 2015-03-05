@@ -484,7 +484,8 @@ script_command_reset() {
     done
 
     if [ $i -gt 0 ]; then
-        test -n ""
+        return 0
+        # test -n ""
         # nef_log "$i branch(es) were reset successfully."
         # nef_log " src: $GIT_DIR/$_tmp_ref/*"
         # nef_log "dest: $GIT_DIR/$GITTED_REF_PREFIX"
