@@ -281,6 +281,7 @@ gitted_driver_reset() {
 
     case $GITTED_CONFIG_RESET_MODE in
         hard)
+            # TODO: delete remote ref if $GITTED_CONFIG_RESET_COMMIT = $GITTED_NULL_SHA1 ?
             gitted_driver_push_to_remote --ignore-changes
             ;;
 

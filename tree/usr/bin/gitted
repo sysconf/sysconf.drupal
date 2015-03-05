@@ -383,7 +383,7 @@ script_command_commit() {
 # Options can be given at any position:
 #
 #   --to <commit>
-#       Reset branch working state to <commit> instead of
+#       Reset branch working state to <commit> instead of current branch value
 ##
 # Not implemented:
 #

@@ -87,11 +87,37 @@ gitted_driver_commit() {
     [ ${PIPESTATUS[0]} -eq 0 ] || exit ${PIPESTATUS[0]}
 
     git fetch "ext::gitted-client %S $driver_target" "$driver_target_branch" >&2
-    git rev-parse --verify FETCH_HEAD
+    git rev-parse --verify FETCH_HEAD # print full commit ID as we are expected to
 }
 
 gitted_driver_reset() {
-    false
+    driver_load_target
+
+    if [ $GITTED_CONFIG_RESET_COMMIT = $GITTED_NULL_SHA1 ]; then
+        [ $driver_target_state = missing ] \
+            && nef_fatal "Cannot remove missing target: $driver_target"
+        nef_fatal "Removing target is not supported (state = $driver_target_state): $driver_target"
+    fi
+    if [ $driver_target_state = missing ]; then
+
+        if [ "$driver_target_branch" = sysconf/master ]; then
+
+            nef_fatal "TODO: sysconf-target init from git commit"
+
+            sysconf-target init $driver_target --custom ssh-pubkey,git-user \
+                || nef_fatal "Could not initialize target: $driver_target"
+            # TODO: manage "--custom unconfined" based on config
+        else
+            nef_fatal "Target is missing, cannot be reset: $driver_target
+
+HINT: push the $driver_target_name/sysconf/target sub-branch to create the target"
+        fi
+    fi
+
+    # Make the push reset on remote side
+    GITTED_PUSH=$GITTED_CONFIG_RESET_MODE \
+        git push "ext::gitted-client %S $driver_target" \
+        "+${GITTED_CONFIG_RESET_COMMIT}:${driver_target_branch}" >&2
 }
 
 ################################################################################
