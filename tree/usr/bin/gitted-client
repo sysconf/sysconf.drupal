@@ -322,8 +322,10 @@ script_command_git-receive-pack() {
     [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command git-receive-pack "too many arguments"
 
     local _target="${_argv[0]}"
+    local _opts=()
+    [ -n "$GITTED_PUSH" ] && _opts=(--push-mode "$GITTED_PUSH")
 
-    script_target_exec "$_target" gitted git-receive-pack
+    script_target_exec "$_target" gitted git-receive-pack "${_opts[@]}"
 }
 
 

@@ -610,12 +610,17 @@ script_command_git-upload-pack() {
 # Usage examples:
 #   git push "ext::gitted %S" sysconf
 #   git push "ext::gitted %S" mysql_bak:mysql
+#
+# Options:
+#
+#   --push-mode <mode>          Mode for the reset action (soft, hard, keep, merge)
 ##
 script_command_git-receive-pack() {
     local _argv=()
 
     while [ -n "$1" ]; do
         case "$1" in
+            --push-mode) export GITTED_PUSH_MODE="$2"; shift 2 ;;
             -h|--help) script_command_help git-receive-pack; return ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
@@ -629,7 +634,7 @@ script_command_git-receive-pack() {
 
 # command: git-hook-pre-receive
 #
-# Check that branches being pushed are configured IOs and system state is not dirty
+# Check that branches being pushed are configured states and are not dirty
 #
 # This command should not be used directly, but be called by
 # /local.repository.git/hooks/pre-receive (run 'gitted init' to setup).
@@ -640,6 +645,7 @@ script_command_git-hook-pre-receive() {
     while [ -n "$1" ]; do
         case "$1" in
             -h|--help) script_command_help git-receive-pack; return ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
@@ -647,9 +653,11 @@ script_command_git-hook-pre-receive() {
 
     [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command git-receive-pack "too many arguments"
 
+    nef_log "gitted: hook-pre-receive: doing nothing"
+    # script_command_status --quiet
 }
 
-# command: git-hook-update
+# command: git-hook-update <ref-name> <old-commit> <new-commit>
 #
 # Update IO work state with new commit
 #
@@ -662,12 +670,17 @@ script_command_git-hook-update() {
     while [ -n "$1" ]; do
         case "$1" in
             -h|--help) script_command_help git-receive-pack; return ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
     done
 
-    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command git-receive-pack "too many arguments"
+    [ "${#_argv[@]}" -lt 3 ] && nef_fatal_usage_command git-receive-pack "too few arguments"
+    [ "${#_argv[@]}" -gt 3 ] && nef_fatal_usage_command git-receive-pack "too many arguments"
+
+    nef_log "gitted: hook-update..."
+    # script_command_reset
 }
 
 ######################################################################

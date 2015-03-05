@@ -44,5 +44,6 @@ if [ ! -d $in_private_repos ]; then
 
     git init --bare $_opts $in_private_repos
 
+    gitted init
     gitted commit '**'
 fi
