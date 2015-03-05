@@ -212,7 +212,7 @@ HINT: run 'git status' and 'git commit' to save changes, or pass
     if [ -n "$_git_ref" ]; then
         # local _git_dir=$(git rev-parse --git-dir)
         # export GIT_DIR=$(git rev-parse --show-toplevel)
-        local GIT_DIR=$(git rev-parse --git-dir)
+        export GIT_DIR=$(git rev-parse --git-dir)
         cd $GIT_DIR
         if [ "$GIT_DIR" = . ]; then
             GIT_DIR="${script_init_sysconf_dir%%/}"
@@ -289,17 +289,25 @@ HINT: provide --force to overwrite"
     # Install sysconf
     if [ "$_no_copy" = no ]; then
         if [ -n "$_git_ref" ]; then
-            nef_log "Preparing Git commit from Sysconf repo: $_git_toplevel"
-            _rm_dir_former=$PWD
-            cd $(mktemp -d)
-            nef_log -v "making clone: $PWD"
-            git init . 2>&1 | nef_log_pipe -v git-fetch: \
+            nef_log "Preparing Git commit from Sysconf repo: $GIT_DIR"
+            local _old_git_dir="$GIT_DIR"
+            _former_dir=$PWD
+            _tmp_dir=$(mktemp -d)
+            nef_log -v "making clone in: $_tmp_dir"
+            #2>&1 | nef_log_pipe -v git-init: \
+            unset GIT_DIR
+            cd $_tmp_dir
+            git init . \
                 || nef_fatal "git-init failed with status $?"
-            git fetch "$_git_toplevel" $_git_ref 2>&1 | nef_log_pipe -v git-fetch: \
-                || nef_fatal "git-fetch failed with status $?"
-            git checkout -b $_git_target_branch FETCH_HEAD 2>/dev/null \
+            git checkout -b _tmp2
+
+            GIT_DIR=$_old_git_dir \
+                git push "$_tmp_dir" $_git_ref:refs/heads/$_git_target_branch 2>&1 \
+                || nef_fatal "git-push failed with status $?"
+
+            git checkout $_git_target_branch \
                 || nef_fatal "git-checkout failed with status $?"
-            _to_rm=$PWD
+            export GIT_DIR="$_old_git_dir"
         else
             nef_log "Copying flat sysconf directory: $PWD"
         fi
@@ -308,9 +316,9 @@ HINT: provide --force to overwrite"
         tar c . | driver_${current_driver}_exec --hybrid \
             -c "mkdir -p ${current_prefix}/sysconf && tar x -C ${current_prefix}/sysconf --no-same-owner --no-same-permissions"
 
-        if [ -n "$_to_rm" ]; then
-            cd $_rm_dir_former
-            rm -rf "$_to_rm"
+        if [ -n "$_tmp_dir" ]; then
+            cd $_former_dir
+            rm -rf "$_tmp_dir"
         fi
 
         if [ "$_no_install" = no -a "$current_driver_sysconf_install" != no ]; then
@@ -850,7 +858,7 @@ driver_lxc_create() {
             -t download -- -d $distrib -r $release -a $arch \
             2>&1 | nef_log_pipe "lxc-create:" \
             || nef_fatal "lxc-create failed with status $?"
-        # NEF_LOG_NO_PREFIX=yes
+
         driver_lxc_refresh_state
 
         if [ $(id -u) -ne 0 ]; then
