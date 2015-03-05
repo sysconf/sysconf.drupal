@@ -105,8 +105,10 @@ gitted_driver_reset() {
             nef_fatal "TODO: sysconf-target init from git commit"
 
             sysconf-target init $driver_target --custom ssh-pubkey,git-user \
+                --git-ref $GITTED_CONFIG_RESET_COMMIT $GIT_DIR \
                 || nef_fatal "Could not initialize target: $driver_target"
             # TODO: manage "--custom unconfined" based on config
+
         else
             nef_fatal "Target is missing, cannot be reset: $driver_target
 

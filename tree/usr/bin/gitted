@@ -502,37 +502,37 @@ script_command_reset() {
 ######################################################################
 # COMMANDS: MANAGEMENT
 
-# command: config [<state branch>] [<mode>]
-#
-# Read/change/add/remove items and create/delete states configurations
-#
-# Without <state branch>, a
-# The <mode> must be one of the following:
-#
-# --create
-# --set
-# --remove
-#
-##
-script_command_config() {
-    local _argv=()
-    local _command=
+# # command: config [<state branch>] [<mode>]
+# #
+# # Read/change/add/remove items and create/delete states configurations
+# #
+# # Without <state branch>, a
+# # The <mode> must be one of the following:
+# #
+# # --create
+# # --set
+# # --remove
+# #
+# ##
+# script_command_config() {
+#     local _argv=()
+#     local _command=
 
-    while [ -n "$1" ]; do
-        case "$1" in
-            -h|--help) script_command_help init; return ;;
-            -*) script_eval_common_option "$1"; shift ;;
-            *) _argv=("${_argv[@]}" "$1"); shift ;;
-        esac
-    done
-}
+#     while [ -n "$1" ]; do
+#         case "$1" in
+#             -h|--help) script_command_help init; return ;;
+#             -*) script_eval_common_option "$1"; shift ;;
+#             *) _argv=("${_argv[@]}" "$1"); shift ;;
+#         esac
+#     done
+# }
 
 # command: init
 #
 # This command initializes the local system with a Gitted repository.
 #
 # /local/repository.git and hooks are created/fixed for use by Gitted.
-# IO are initialized (command "init" of drivers).
+# State branches are initialized (command "init" of drivers).
 #
 # It is safe to run "init" multiples times : no data will be erased, like with git-init(1).
 # It can be used to fix the hooks.

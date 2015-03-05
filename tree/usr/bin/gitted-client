@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# gitted-client: manage a Gitted target system like a Git repository -- http://gitted.net
+# gitted-client: manage a target Gitted through sysconf-target -- http://gitted.net
 #
 # Gitted is a shell framework that turn a UNIX system into a Git repository
 # where the machine state is seen as a "Git work data" which can be
