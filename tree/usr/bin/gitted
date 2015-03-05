@@ -433,7 +433,7 @@ script_command_reset() {
 
             if [ -n "$_commit" ]; then
                 if [ $_commit = $GITTED_CONFIG_STATE_COMMIT ]; then
-                    nef_fatal "branch $_state_branch is already at commit: $(script_format_commit_label $_to)"
+                    nef_log "WARN: branch $_state_branch is already at commit: $(script_format_commit_label $_to)"
                 fi
                 nef_log "Resetting branch [$GITTED_CONFIG_STATE_DRIVER]: $_state_branch ... to: $_commit"
 

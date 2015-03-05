@@ -253,7 +253,7 @@ gitted_driver_commit() {
 
             if [ "$remote_head" = $driver_remote_branch -a -n "$driver_local_changes" ]; then
                 local _message="$GITTED_CONFIG_COMMIT_MESSAGE"
-                [ -z "$_message" ] && _message="$nef_command_name auto-commit in $(hostname):$driver_url"
+                [ -z "$_message" ] && _message="Gitted $nef_command_name auto-commit from $(id -un)@$(hostname):$driver_url"
                 remote_local_git --fatal add -A >&2
                 remote_local_git --fatal commit -m "$_message" >&2
             fi
