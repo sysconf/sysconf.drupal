@@ -68,6 +68,9 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 #
 #   --no-copy                           Do not copy/fix sysconf
 #
+#       It is useful to create a machine with a fresh distribution, as well
+#       as patching an existing target with --force --custom <...>
+#
 #   --no-install                        Do not install sysconf, just make the copy
 #
 #   --no-setup                          Do not setup sysconf, just install it
@@ -78,6 +81,13 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 #       instead of copying the whole Git history to the target.
 #
 #   --git-ignore-changes                Keep using Git HEAD when dir or index is dirty.
+#
+#   --git-ref <name>                    Enable PURE-Git for Sysconf source
+#
+#       In this mode, <sysconf-dir> is expected to be a Git repository (either
+#       bare, checked out, or somewhere in the working tree).
+#       The index or working tree status, if any, is not checked at all.
+#       Sysconf files are read from the commit specified by <name>.
 #
 #   --git-target-branch <name>          Set HEAD branch name on target /sysconf
 #       Default is "master".
@@ -125,6 +135,7 @@ script_command_init() {
     local _no_copy=no
     local _no_install=no
     local _no_setup=no
+    local _git_ref=
     local _no_git=no
     local _git_ignore_changes=no
     local _git_target_branch=master
@@ -139,6 +150,7 @@ script_command_init() {
             --no-copy) _no_copy=yes; shift ;;
             --no-install) _no_install=yes; shift ;;
             --no-setup) _no_setup=yes; shift ;;
+            --git-ref) _git_ref="$2"; shift 2 ;;
             --no-git) _no_git=yes; shift ;;
             --git-ignore-changes) _git_ignore_changes=yes; shift ;;
             --git-target-branch) _git_target_branch=$2; shift 2 ;;
@@ -152,6 +164,8 @@ script_command_init() {
         esac
     done
 
+    [ -n "$_git_ref" -a $_no_git = yes ] \
+        && nef_fatal_usage_command init "--git-ref is incompatible with --no-git"
     [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command init "missing argument"
     [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command init "too many arguments"
 
@@ -159,45 +173,79 @@ script_command_init() {
     script_init_sysconf_dir="${_argv[1]-.}"
 
     # Check if sysconf dir is valid
-    cd "$script_init_sysconf_dir" \
-        || nef_fatal "could not change to directory: $script_init_sysconf_dir"
-    [ -r deps ] && nef_fatal "file './deps' should not be present
+    local _git_commit=
+    local _error_dir_is_layer="file './deps' should not be present
 The directory must CONTAIN sysconf profiles, it must not be a profile itself"
-    [ ! -r actual/deps ] && nef_fatal "invalid sysconf dir: $script_init_sysconf_dir
+    local _error_missing_deps="invalid sysconf dir: $script_init_sysconf_dir
 The file actual/deps is missing or not readable. Are you sure it is a sysconf directory?"
 
-    # Check if Git mode
-    local _git_mode=no
+    cd "$script_init_sysconf_dir" \
+        || nef_fatal "could not change to directory: $script_init_sysconf_dir"
 
-    if [ $_no_git = no -a -n "$(which git)" ]; then
-        # check if git
-        if git rev-parse --git-dir >/dev/null 2>&1; then
-            # Git repository found but sysconf dir may not be at the root of the work tree
-            local _wdprefix=$(git rev-parse --show-prefix 2>/dev/null)
+    if [ -n "$_git_ref" ]; then
+        # export GIT_DIR=$(git rev-parse --git-dir)
+        git rev-parse --git-dir >/dev/null 2>&1 \
+            || nef_fatal "not a Git repository (with --git-ref): $script_init_sysconf_dir"
+        # [ -z "$GIT_DIR" ] \
+    else
+        # Auto-detect Git mode and make some checks
+        if [ $_no_git = no -a -n "$(which git)" ]; then
+            if git rev-parse --git-dir >/dev/null 2>&1; then
+                # Git repository found but sysconf dir may not be at the root of the work tree
+                if [ -z "$(git rev-parse --show-prefix 2>/dev/null)" ]; then
+                    _git_ref=HEAD
+                    if [ $_git_ignore_changes = no ]; then
+                        local _output=$(git status --porcelain)
+                        [ $? -eq 0 ] || nef_fatal "git-status failed from directory: $script_init_sysconf_dir"
 
-            if [ -z "$_wdprefix" ]; then
-
-                local _git_mode=yes
-                nef_log "Git-mode transfer ENABLED, repository: $(git rev-parse --git-dir)"
-                # local _git_dir=$(git rev-parse --git-dir)
-                local _git_toplevel=$(git rev-parse --show-toplevel)
-
-                if [ $_git_ignore_changes = no ]; then
-                    local _output=$(git status --porcelain)
-                    [ $? -eq 0 ] || nef_fatal "git-status failed from directory: $script_init_sysconf_dir"
-
-                    [ -n "$_output" ] && nef_fatal "Git work dir must be clean from HEAD: $script_init_sysconf_dir
+                        [ -n "$_output" ] \
+                            && nef_fatal "Git work dir must be clean from HEAD: $script_init_sysconf_dir
 
 HINT: run 'git status' and 'git commit' to save changes, or pass
 --git-ignore-changes or --no-git"
+                    fi
                 fi
             fi
         fi
     fi
+    # Some more checkings
+    if [ -n "$_git_ref" ]; then
+        # local _git_dir=$(git rev-parse --git-dir)
+        # export GIT_DIR=$(git rev-parse --show-toplevel)
+        local GIT_DIR=$(git rev-parse --git-dir)
+        cd $GIT_DIR
+        if [ "$GIT_DIR" = . ]; then
+            GIT_DIR="${script_init_sysconf_dir%%/}"
+        else
+            [[ "$GIT_DIR" =~ ^/ ]] || GIT_DIR="${script_init_sysconf_dir%%/}/$GIT_DIR"
+        fi
+
+        _git_commit=$(git rev-parse --verify "$_git_ref" 2>/dev/null)
+        [ -z "$_git_commit" ] \
+            && nef_fatal "not a valid Git commit: $_git_ref"
+        [ -n "$(git ls-tree $_git_commit deps)" ] \
+            &&  nef_fatal "$_error_dir_is_layer (in Git)"
+        [ -z "$(git ls-tree $_git_commit actual/deps)" ] \
+            &&  nef_fatal "$_error_missing_deps (in Git)"
+
+        nef_log "Git-mode transfer ENABLED, repository: $GIT_DIR, ref: $_git_ref"
+    else
+        [ -r deps ] && nef_fatal "$_error_dir_is_layer"
+        [ ! -r actual/deps ] && nef_fatal "$_error_missing_deps"
+    fi
 
     # Fix distrib
     if [ -z "$script_init_distrib" ]; then
-        script_init_distrib=$(cat "$script_init_sysconf_dir/type" 2>/dev/null | head -n 1 | tr ' ' :)
+        script_init_distrib=$(
+            if [ -n "$_git_ref" ]; then
+                local _sha1=$(git ls-tree $_git_ref type | cut -d' ' -f3 | cut -d$'\t' -f1)
+                if [ -n "$_sha1" ]; then
+                    git cat-file -p $_sha1
+                fi
+            else
+                cat "$script_init_sysconf_dir/type"
+            fi 2>/dev/null | head -n 1 | tr ' ' :
+        )
     fi
     if [ -z "$script_init_distrib" ]; then
         nef_log -v "Sysconf does not define distribution, using default '$SYSCONF_TARGET_DEFAULT_DISTRIB'"
@@ -240,14 +288,14 @@ HINT: provide --force to overwrite"
 
     # Install sysconf
     if [ "$_no_copy" = no ]; then
-        if [ $_git_mode = yes ]; then
+        if [ -n "$_git_ref" ]; then
             nef_log "Preparing Git commit from Sysconf repo: $_git_toplevel"
             _rm_dir_former=$PWD
             cd $(mktemp -d)
             nef_log -v "making clone: $PWD"
             git init . 2>&1 | nef_log_pipe -v git-fetch: \
                 || nef_fatal "git-init failed with status $?"
-            git fetch "$_git_toplevel" HEAD 2>&1 | nef_log_pipe -v git-fetch: \
+            git fetch "$_git_toplevel" $_git_ref 2>&1 | nef_log_pipe -v git-fetch: \
                 || nef_fatal "git-fetch failed with status $?"
             git checkout -b $_git_target_branch FETCH_HEAD 2>/dev/null \
                 || nef_fatal "git-checkout failed with status $?"
