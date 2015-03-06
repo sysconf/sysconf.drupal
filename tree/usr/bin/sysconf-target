@@ -291,6 +291,7 @@ HINT: provide --force to overwrite"
         if [ -n "$_git_ref" ]; then
             nef_log "Preparing Git commit from Sysconf repo: $GIT_DIR"
             local _old_git_dir="$GIT_DIR"
+            [ -z "$_old_git_dir" ] && _old_git_dir="$PWD"
             _former_dir=$PWD
             _tmp_dir=$(mktemp -d)
             nef_log -v "making clone in: $_tmp_dir"
