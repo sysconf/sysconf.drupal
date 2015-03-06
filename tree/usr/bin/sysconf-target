@@ -193,7 +193,7 @@ The file actual/deps is missing or not readable. Are you sure it is a sysconf di
             if git rev-parse --git-dir >/dev/null 2>&1; then
                 # Git repository found but sysconf dir may not be at the root of the work tree
                 if [ -z "$(git rev-parse --show-prefix 2>/dev/null)" ]; then
-                    _git_ref=HEAD
+                    _git_ref=$(git symbolic-ref HEAD)
                     if [ $_git_ignore_changes = no ]; then
                         local _output=$(git status --porcelain)
                         [ $? -eq 0 ] || nef_fatal "git-status failed from directory: $script_init_sysconf_dir"
