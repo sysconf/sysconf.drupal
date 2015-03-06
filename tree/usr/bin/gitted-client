@@ -141,6 +141,7 @@ script_command_init() {
 
     local _name=$(echo $_target | cut -d: -f2)
     git remote add $_name gitted:$_target || _fail "git remote add $_name gitted:$_target"
+    git fetch $_name
 }
 
 # command: register [what] [git-config-scope]
