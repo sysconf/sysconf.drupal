@@ -291,7 +291,7 @@ HINT: provide --force to overwrite"
         if [ -n "$_git_ref" ]; then
             nef_log "Preparing Git commit from Sysconf repo: $GIT_DIR"
             local _old_git_dir="$GIT_DIR"
-            [ -z "$_old_git_dir" ] && _old_git_dir="$PWD"
+            # [ -z "$_old_git_dir" ] && _old_git_dir="$PWD"
             _former_dir=$PWD
             _tmp_dir=$(mktemp -d)
             nef_log -v "making clone in: $_tmp_dir"
@@ -302,9 +302,11 @@ HINT: provide --force to overwrite"
                 || nef_fatal "git-init failed with status $?"
             git checkout -b _tmp2
 
-            GIT_DIR=$_old_git_dir \
-                git push "$_tmp_dir" $_git_ref:refs/heads/$_git_target_branch 2>&1 \
-                || nef_fatal "git-push [GIT_DIR=$GIT_DIR] failed with status $?"
+            (
+                cd $_former_dir
+                GIT_DIR=$_old_git_dir \
+                    git push "$_tmp_dir" $_git_ref:refs/heads/$_git_target_branch 2>&1
+            ) || nef_fatal "git-push [GIT_DIR=$GIT_DIR] failed with status $?"
 
             git checkout $_git_target_branch \
                 || nef_fatal "git-checkout failed with status $?"
