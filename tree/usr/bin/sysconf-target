@@ -946,7 +946,7 @@ HINT: Create it with: $0 init $current_target /path/to/sysconf"
     esac
 
     nef_log -v "driver_lxc_exec <$current_target_id> ${_argv[*]}"
-    exec lxc-attach --clear-env -n $current_target_id -- "${_argv[@]}"
+    exec lxc-attach --clear-env -n $current_target_id -- env USER=root HOME=/root TERM="$TERM" "${_argv[@]}"
 }
 
 driver_lxc_refresh_state() {
