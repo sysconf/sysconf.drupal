@@ -143,7 +143,8 @@ script_command_init() {
     script_command_register --local || _fail "$nef_command_name register --local"
 
     nef_log "Creating target (options: ${_target_init_opts[*]}): $_target"
-    "$sysconf_target_script" init $_target || _fail "sysconf-target init $_target"
+    "$sysconf_target_script" init $_target "${_target_init_opts[*]}" \
+        || _fail "sysconf-target init $_target"
 
     local _name=$(echo $_target | cut -d: -f2)
     nef_log "Adding and fetching git remote: $_name -> gitted:$_target"
