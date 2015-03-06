@@ -303,7 +303,7 @@ HINT: provide --force to overwrite"
 
             GIT_DIR=$_old_git_dir \
                 git push "$_tmp_dir" $_git_ref:refs/heads/$_git_target_branch 2>&1 \
-                || nef_fatal "git-push failed with status $?"
+                || nef_fatal "git-push [GIT_DIR=$GIT_DIR] failed with status $?"
 
             git checkout $_git_target_branch \
                 || nef_fatal "git-checkout failed with status $?"
