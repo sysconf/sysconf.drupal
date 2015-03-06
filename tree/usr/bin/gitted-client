@@ -100,7 +100,7 @@ script_command_reset() {
 ######################################################################
 # COMMANDS: GIT INTEGRATION
 
-# command: init <target>
+# command: init <target> [ -- <sysconf-target-options>]
 #
 # Helper command to get started with a running Gitted machine
 #
@@ -114,13 +114,19 @@ script_command_reset() {
 # its 'DRIVER:' prefix.
 #
 # Example: target 'lxc:machine42' makes a Git remote 'machine42'.
+#
+# <sysconf-target-options> are options, as multiple arguments, that are passed
+# to the 'sysconf-target init' command.
+#
 ##
 script_command_init() {
     local _argv=()
+    local _target_init_opts=()
 
     while [ -n "$1" ]; do
         case "$1" in
             -h|--help) script_command_help init; return ;;
+            --) shift; _target_init_opts=("$@"); shift $# ;;
             -*) script_eval_common_option "$1" --try || _argv=("${_argv[@]}" "$1"); shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
@@ -136,7 +142,7 @@ script_command_init() {
 
     script_command_register --local || _fail "$nef_command_name register --local"
 
-    nef_log "Creating target: $_target"
+    nef_log "Creating target (options: ${_target_init_opts[*]}): $_target"
     "$sysconf_target_script" init $_target || _fail "sysconf-target init $_target"
 
     local _name=$(echo $_target | cut -d: -f2)
