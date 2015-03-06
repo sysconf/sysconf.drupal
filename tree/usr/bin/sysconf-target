@@ -213,7 +213,7 @@ HINT: run 'git status' and 'git commit' to save changes, or pass
         # local _git_dir=$(git rev-parse --git-dir)
         # export GIT_DIR=$(git rev-parse --show-toplevel)
         export GIT_DIR=$(git rev-parse --git-dir)
-        cd $GIT_DIR
+        # cd $GIT_DIR
         if [ "$GIT_DIR" = . ]; then
             GIT_DIR="${script_init_sysconf_dir%%/}"
         else
