@@ -1,4 +1,0 @@
-#!/bin/bash
-#
-
-GITTED_DATA_PATH=sysconf NEF_LOG_NO_PREFIX=yes /usr/share/gitted/export/sysconf
