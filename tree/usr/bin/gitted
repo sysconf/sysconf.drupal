@@ -294,7 +294,7 @@ script_command_commit() {
 
             export GITTED_CONFIG_DRIVER_ACTION=commit
             export GITTED_CONFIG_COMMIT_MESSAGE=$_msg
-            export GITTED_CONFIG_COMMIT_AUTHOR=$_author
+            export GITTED_CONFIG_COMMIT_AUTHOR="$_author"
             export GITTED_CONFIG_COMMIT_ALLOW_EMPTY=$_allow_empty
 
             local _commit

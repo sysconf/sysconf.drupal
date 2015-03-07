@@ -253,9 +253,13 @@ gitted_driver_commit() {
 
             if [ "$remote_head" = $driver_remote_branch -a -n "$driver_local_changes" ]; then
                 local _message="$GITTED_CONFIG_COMMIT_MESSAGE"
-                [ -z "$_message" ] && _message="Gitted $nef_command_name auto-commit from $(id -un)@$(hostname):$driver_url"
+                local _args=()
+                [ -z "$_message" ] && \
+                    _message="Gitted $nef_command_name auto-commit from $(id -un)@$(hostname):$driver_url"
+                [ -n "$GITTED_CONFIG_COMMIT_AUTHOR" ] \
+                    && _args=("${_args[@]}" --author="$GITTED_CONFIG_COMMIT_AUTHOR")
                 remote_local_git --fatal add -A >&2
-                remote_local_git --fatal commit -m "$_message" >&2
+                remote_local_git --fatal commit -m "$_message" "${_args[@]}" >&2
             fi
 
             driver_git_fetch || exit 1
