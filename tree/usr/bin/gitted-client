@@ -13,11 +13,12 @@
 #   - forward Git push/pull to target (using the Git ext:: remote protocol)
 #   - integrate both for easy use from the "git" command (register)
 #
-# Add -h or --help to any command for detailed information.
+# Add -h or --help to any command for detailed information. Run command
+# 'help <target> <command> -h' to get full usage from given target's Gitted.
 #
 ## HISTORY
 #    20140818 first version by JF Gigand <jf@geonef.fr>
-#    20150222 reconception around "IO commit" and partial rewrite using new sysconf-target
+#    20150222 reconception around "state commit" and partial rewrite using new sysconf-target
 ##
 
 nef_command_name=gitted-client
@@ -71,7 +72,7 @@ script_command_commit() {
 
     while [ -n "$1" ]; do
         case "$1" in
-            -h|--help) script_command_help status; return ;;
+            -h|--help) script_command_help commit; return ;;
             -*) script_eval_common_option "$1" --try || _argv=("${_argv[@]}" "$1"); shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
@@ -90,7 +91,7 @@ script_command_reset() {
 
     while [ -n "$1" ]; do
         case "$1" in
-            -h|--help) script_command_help status; return ;;
+            -h|--help) script_command_help reset; return ;;
             -*) script_eval_common_option "$1" --try || _argv=("${_argv[@]}" "$1"); shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
