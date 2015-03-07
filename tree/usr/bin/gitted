@@ -49,7 +49,7 @@ NEF_LOG_NO_PREFIX=yes
 #
 # Show status of configured state branch(es) with different verbosity levels
 #
-# Branch arguments are matched against the configuration from /etc/gitted/state,
+# Branch arguments are matched against the configuration from /etc/gitted/state/,
 # which may exist or not as real Git branches in /local.repository.git/refs/heads.
 #
 # Giving no <state branch> expands to all branches from configuration (or all
