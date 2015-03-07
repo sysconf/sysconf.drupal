@@ -258,6 +258,7 @@ gitted_driver_commit() {
                     _message="Gitted $nef_command_name auto-commit from $(id -un)@$(hostname):$driver_url"
                 [ -n "$GITTED_CONFIG_COMMIT_AUTHOR" ] \
                     && _args=("${_args[@]}" --author="$GITTED_CONFIG_COMMIT_AUTHOR")
+                echo GITTED_CONFIG_COMMIT_AUTHOR "$GITTED_CONFIG_COMMIT_AUTHOR" >&2
                 remote_local_git --fatal add -A >&2
                 remote_local_git --fatal commit -m "$_message" "${_args[@]}" >&2
             fi
