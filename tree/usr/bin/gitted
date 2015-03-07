@@ -47,7 +47,7 @@ NEF_LOG_NO_PREFIX=yes
 
 # command: status [<state branches>] [--quiet | --branches | --list | --diff]
 #
-# Show status of configured state branch(es) with different verbosity levels
+# Show status of configured state branch(es) in different view modes
 #
 # Branch arguments are matched against the configuration from /etc/gitted/state/,
 # which may exist or not as real Git branches in /local.repository.git/refs/heads/.
