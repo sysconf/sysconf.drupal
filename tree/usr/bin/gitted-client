@@ -68,15 +68,28 @@ script_command_status() {
 # If not provided, <target> is guessed from the curent branch's upstream remote.
 ##
 script_command_commit() {
+    local _author=
     local _argv=()
 
     while [ -n "$1" ]; do
         case "$1" in
+            --author) _author="$2"; shift ;;
             -h|--help) script_command_help commit; return ;;
             -*) script_eval_common_option "$1" --try || _argv=("${_argv[@]}" "$1"); shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
     done
+
+    if [ -z "$_author" ]; then
+        _author=$(git config user.name)
+        local _email=$(git config user.email)
+        if [ -n "$_email" ]; then
+            _author="$_author <${_email}>"
+        fi
+    fi
+    if [ -n "$_author" ]; then
+        _argv=("${_argv[0]}" --author "$_author")
+    fi
 
     script_server_command commit "${_argv[@]}"
 }
@@ -151,12 +164,12 @@ script_command_init() {
     "$sysconf_target_script" init $_target "${_target_init_opts[@]}" \
         || _fail "sysconf-target init $_target"
 
-    local _name=$(echo $_target | cut -d: -f2)
-    nef_log "Adding and fetching git remote: $_name -> gitted:$_target"
-    git config remote.gitted.url >/dev/null \
-        || git remote add $_name gitted:$_target \
-        || _fail "git remote add $_name gitted:$_target"
-    git fetch $_name
+        local _name=$(echo $_target | cut -d: -f2)
+        nef_log "Adding and fetching git remote: $_name -> gitted:$_target"
+        git config remote.gitted.url >/dev/null \
+            || git remote add $_name gitted:$_target \
+            || _fail "git remote add $_name gitted:$_target"
+        git fetch $_name
 }
 
 # command: register [what] [git-config-scope]
