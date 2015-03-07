@@ -41,9 +41,10 @@ sysconf_target_script=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tr
 ######################################################################
 # COMMANDS: GITTED SERVER
 
-# command: status <target> [<state branches>] [--quiet | --branches | --list | --diff]
+# command: status [<target>] [<state branches>] [--quiet | --branches | --list | --diff]
 #
 # Show status of <state branches> inside target.
+# If not provided, <target> is guessed from the curent branch's upstream remote.
 ##
 script_command_status() {
     local _argv=()
@@ -60,9 +61,10 @@ script_command_status() {
 }
 
 
-# command: commit <target>  <state branches>  [-m <message>]
+# command: commit [<target>]  <state branches>  [-m <message>]
 #
 # Commit current state of <state branches> inside target.
+# If not provided, <target> is guessed from the curent branch's upstream remote.
 ##
 script_command_commit() {
     local _argv=()
@@ -78,9 +80,10 @@ script_command_commit() {
     script_server_command commit "${_argv[@]}"
 }
 
-# command: reset <target>  <state branches>  [--to <commit>] [<mode>]
+# command: reset [<target>]  <state branches>  [--to <commit>] [<mode>]
 #
 # Reset current state of <state branches> inside target.
+# If not provided, <target> is guessed from the curent branch's upstream remote.
 ##
 script_command_reset() {
     local _argv=()
@@ -464,17 +467,28 @@ script_server_command() {
 
     . "$(git --exec-path)/git-parse-remote"
 
-    [ -z "$1" ] \
-        && nef_fatal_usage_command "$_command" "missing target argument"
+    # [ -z "$1" ] \
+    #     && nef_fatal_usage_command "$_command" "missing target argument"
 
     if script_is_target_id "$1"; then
         _target="$1"
         shift
     else
-        nef_fatal_usage_command "$_command" "not a target ref: $1"
+        . "$(git --exec-path)/git-parse-remote"
+        local _remote=$(get_default_remote)
+        # echo remote: $_remote
+        _target=$(git config remote.${_remote}.url)
+        if [ -z "$_target" ]; then
+            (nef_fatal_usage_command "$_command" --status ""  \
+                "Please specify the gitted target, as current branch has no upstream: $(git symbolic-ref -q HEAD)")
+            echo >&2
+            error_on_missing_default_upstream ted "run 'gitted $_command'" "on" >&2
+        fi
+        _target="${_target#gitted:}"
+        nef_log "using target: $_target"
+        # [ -z "$_url" ] && nef_fatal_usage_command "$_command" "not a target ref: $1"
+
         # # target must be resolved
-        # . "$(git --exec-path)/git-parse-remote"
-        # local _remote=$(get_default_remote)
         # local _url=$(git config --get "remote.$_remote.remote")
         # # nef_fatal_usage_command "$1" "$(error_on_missing_default_upstream)"
     fi
