@@ -1,5 +1,27 @@
 #!/bin/bash
 #
+# Gitted state driver to sync a remote Git repository
+#
+# If the remote URL is a local directory, the driver will check if it is a
+# non-bare repository (that is, with an index and working tree).
+# If so, the status/commit/reset commands also work with the local changes,
+# whether in index only (as reported by status --cached) and working dir.
+#
+# CONFIGURATION EXAMPLE: /etc/gitted/state/sysconf.config
+#
+# This example will enable gitted to sync commit/reset with the local /sysconf
+# directory. Only the branches are manipulated, not tags or other refs, as
+# git-remote.remoteRefs equals "refs/heads/*", which means: all branches and
+# below.
+#
+#   [state]
+#      driver = git-remote
+#
+#   [git-remote]
+#      url = /sysconf
+#      remoteRefs = refs/heads/*
+#      localRefs = *
+#
 
 . /usr/share/gitted/shell-driver || exit 2
 
@@ -305,6 +327,7 @@ gitted_driver_reset() {
 
             # nef_fatal "--merge mode not implemented by this driver now"
 
+            ## TODO: check fast-forward to deny merge that "take new commit out" ..?
             #     gitted_driver_status_code
 
             #     if [ $? -eq 0 ]; then

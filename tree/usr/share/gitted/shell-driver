@@ -117,11 +117,11 @@ gitted_driver_status_diff() {
 #   $GITTED_CONFIG_RESET_MODE
 #
 gitted_driver_reset() {
-    false
+    nef_fatal "RESET action is not supported by the driver"
 }
 
 gitted_driver_commit() {
-    false
+    nef_fatal "COMMIT action is not supported by the driver"
 }
 
 gitted_driver_list() {

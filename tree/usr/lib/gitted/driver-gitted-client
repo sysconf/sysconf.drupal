@@ -1,5 +1,42 @@
 #!/bin/bash
 #
+# Gitted state driver to mount a given gitted target on the local Gitted
+#
+# This drivers is simple: use gitted-client to forward status/commit/reset
+# actions to the given gitted target.
+#
+# It gets interesting when seen as a GITTED MOUNT of a gitted target on the
+# local gitted system.
+#
+# A useful feature is tthe ability to create the target automatically
+# when a TARGET/sysconf/master branch is being reset.
+# This behaviour is enabled with config item: state.target = DRIVER:[*]
+# ...where DRIVER is one of the drivers supported by sysconf-target.
+#
+# CONFIGURATION EXAMPLE: /etc/gitted/state/@.config
+#
+# This example will enable gitted to manage any LXC container through
+# gitted-client (which uses sysconf-target to create or access the container).
+#
+# Resetting branch "@/NAME/sysconf/master" will create the LXC container
+# NAME using the branch head as the /sysconf. If the container exists already,
+# it is updated only.
+#
+# Pushing other branches in "@/NAME/" will do nothing until container NAME
+# exists. Then, any commit or reset command will be forwarded just the same.
+#
+# In option "state.init-custom", the "lxc:unconfined" custom spec will enable
+# sysconf-target to create the LXC container with the "lxc.aa_profile = unconfined"
+# LXC option to allow nested containers.
+#
+# Thus, this example is actually used to manage system grapes with 2 to 4 levels,
+# for example a level-4 branch: @/cloud4/@/grappe42/@/mysql-machine/sysconf/master
+#
+#   [state]
+#      driver = gitted-client
+#      target = lxc:[*]
+#      init-custom = ssh-pubkey,git-user,lxc:unconfined
+#
 
 . /usr/share/gitted/shell-driver || exit 2
 
