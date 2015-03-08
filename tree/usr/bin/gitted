@@ -47,10 +47,10 @@ NEF_LOG_NO_PREFIX=yes
 
 # command: status [<state branches>] [--quiet | --branches | --list | --diff]
 #
-# Show status of configured state branch(es) with different verbosity levels
+# Show status of configured state branch(es) in different view modes
 #
-# Branch arguments are matched against the configuration from /etc/gitted/state,
-# which may exist or not as real Git branches in /local.repository.git/refs/heads.
+# Branch arguments are matched against the configuration from /etc/gitted/state/,
+# which may exist or not as real Git branches in /local.repository.git/refs/heads/.
 #
 # Giving no <state branch> expands to all branches from configuration (or all
 # branches in Git's refs/heads/ if --existing is set).
@@ -72,20 +72,20 @@ NEF_LOG_NO_PREFIX=yes
 #
 # Options can be given at any position:
 #
-#   --quiet     (or -vq)
+#   -vq, --quiet
 #               Do not ouput anything, just return status code 0 if clean, 1 if dirty
 #
-#   --branches  (or -vb)
+#   -vb, --branches
 #               Print the list of branches with a status letter like 'git status'
 #               does: (space)/M/A/D for (clean/edited/added/deleted).
 #               This is the default with no <state branch> is given.
 #
-#   --list      (or -vl)
+#   -vl, --list
 #               List state-level differences from branch to working state, in a
 #               format similar to 'git status --porcelain'.
 #               This is the default when <state branch> is given.
 #
-#   --diff      (or -vd)
+#   -vd, --diff
 #               Show full differences from branch to work state. The format
 #               will vary across drivers, be it like 'git diff' or whatever.
 #               Some drivers won't support it and will print a --list instead.
@@ -110,7 +110,7 @@ script_command_status() {
             -vq | -vb | -vl | -vd)
                 [ -n "$_view" ] \
                     && nef_fatal_usage_command status "$1 conflicts with --$_view"
-                case $1 in -vq) _view=quiet ;; -vb) _view=branches ;; -vl) __view=list ;; -vd) _view=diff ;; esac
+                case $1 in -vq) _view=quiet ;; -vb) _view=branches ;; -vl) _view=list ;; -vd) _view=diff ;; esac
                 shift
                 ;;
             --ref) _ref="$2"; shift 2 ;;
@@ -294,7 +294,7 @@ script_command_commit() {
 
             export GITTED_CONFIG_DRIVER_ACTION=commit
             export GITTED_CONFIG_COMMIT_MESSAGE=$_msg
-            export GITTED_CONFIG_COMMIT_AUTHOR=$_author
+            export GITTED_CONFIG_COMMIT_AUTHOR="$_author"
             export GITTED_CONFIG_COMMIT_ALLOW_EMPTY=$_allow_empty
 
             local _commit
@@ -411,7 +411,7 @@ script_command_reset() {
 
     [ -z "$_mode" ] && _mode=keep
 
-    [ "${#_argv[@]}" -eq 0 ] && nef_fatal_usage_command commit "too few arguments"
+    [ "${#_argv[@]}" -eq 0 ] && nef_fatal_usage_command reset "too few arguments"
 
     script_return_status=yes # tell the caller not throw an error in case of non-null status
 
