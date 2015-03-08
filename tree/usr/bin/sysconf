@@ -51,8 +51,11 @@ Where <command> is one of:
     install
         Install the compiled directory content to target
 
-    update
+    setup
         Execute updates (setup.rc) for given config and recursive deps
+
+    update
+        Perform the 3 operations at once: compile, install, setup
 
     add file_1 [file_2 [file_N]]
 	Move given (real) files to CONFIG's tree and replace them with a symlink.
@@ -483,10 +486,21 @@ while [ "$1" != "" ]; do
 	    install_compiled
 	    ;;
 
+        setup)
+            nef_read_args "$@"
+            shift $((OPTIND-1))
+
+            load_environment
+	    update_system_from_conf "$config"
+	    ;;
+
         update)
             nef_read_args "$@"
             shift $((OPTIND-1))
 
+	    reinit_compiled_dir
+	    compile_conf "$config"
+	    install_compiled
             load_environment
 	    update_system_from_conf "$config"
 	    ;;
