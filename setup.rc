@@ -47,3 +47,15 @@ if [ ! -d $in_private_repos ]; then
     gitted init
     gitted commit '**'
 fi
+
+# Setup hooks on /sysconf/.git
+if [ -d /sysconf/.git ]; then
+    if [ ! -r /sysconf/.git/hooks/post-checkout ]; then
+        echo -e "#!/bin/sh\nexec sysconf update" >/sysconf/.git/hooks/post-checkout
+        chmod +x /sysconf/.git/hooks/post-checkout
+    fi
+    if [ ! -r /sysconf/.git/hooks/post-merge ]; then
+        echo -e "#!/bin/sh\nexec sysconf update" >/sysconf/.git/hooks/post-merge
+        chmod +x /sysconf/.git/hooks/post-merge
+    fi
+fi
