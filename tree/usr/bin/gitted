@@ -810,7 +810,7 @@ script_expand_state_branches() {
 
     while [ -n "$1" ]; do
 
-        [[ "$1" =~ ^(([-a-zA-Z0-9._]+|\*\*?)(/|$))+$ ]] \
+        [[ "$1" =~ ^(([-a-zA-Z0-9.,!+=_@^%]+|\*\*?)(/|$))+$ ]] \
             || nef_fatal_usage_command "$_usage_name" "invalid <state branch> pattern: $1"
 
         [[ "$1" =~ /$ ]] \
