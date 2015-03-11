@@ -384,6 +384,10 @@ script_command_commit() {
 #
 #   --to <commit>
 #       Reset branch working state to <commit> instead of current branch value
+#
+#   --state-only
+#       Do not update branch ref, just act on state. Incompatible with --soft,
+#       which does the opposite.
 ##
 # Not implemented:
 #
@@ -395,6 +399,7 @@ script_command_reset() {
     local _argv=()
     local _mode=
     local _to=
+    local _state_only=no
 
     while [ -n "$1" ]; do
         case "$1" in
@@ -403,6 +408,7 @@ script_command_reset() {
                     && nef_fatal_usage_command reset "$1 is incompatible with --$_mode";
                 _mode=${1#--}; shift ;;
             --to) _to="$2"; shift 2 ;;
+            --state-only) _state_only=yes; shift ;;
             -h|--help) script_command_help reset; return ;;
             -*) script_eval_common_option "$1"; shift ;;
             *) _argv=("${_argv[@]}" "$1"); shift ;;
@@ -473,10 +479,13 @@ script_command_reset() {
             fi
 
             if [ $_ok = yes ]; then
-                echo "[${_state_branch} ${_commit:0:7}] Reset OK to: $(script_format_commit_label $_commit)"
-                if [ $_commit != $GITTED_CONFIG_STATE_COMMIT ]; then
+                local _state=
+                if [ $_state_only = yes ]; then
+                    _state="STATE ONLY "
+                elif [ $_commit != $GITTED_CONFIG_STATE_COMMIT ]; then
                     git update-ref ${GITTED_REF_PREFIX}$_state_branch "$_commit"
                 fi
+                echo "[${_state_branch} ${_commit:0:7}] ${_state}Reset OK to: $(script_format_commit_label $_commit)"
             fi
 
         ) || exit $? #nef_fatal "state branch failed to be reset: $_state_branch"
@@ -679,8 +688,9 @@ script_command_git-hook-update() {
     [ "${#_argv[@]}" -lt 3 ] && nef_fatal_usage_command git-receive-pack "too few arguments"
     [ "${#_argv[@]}" -gt 3 ] && nef_fatal_usage_command git-receive-pack "too many arguments"
 
-    nef_log "gitted: hook-update..."
-    # script_command_reset
+    local _branch=${_argv[0]#refs/heads/}
+    nef_log "gitted: hook-update (branch=$_branch) on ref: ${_argv[@]}"
+    script_command_reset --state-only --keep $_branch --to ${_argv[2]}
 }
 
 ######################################################################

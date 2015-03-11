@@ -157,7 +157,7 @@ HINT: to create '$driver_target', push 'sysconf/master' to: $driver_target_name"
     # Make the push reset on remote side
     GITTED_PUSH=$GITTED_CONFIG_RESET_MODE \
         git push "ext::gitted-client %S $driver_target" \
-        "+${GITTED_CONFIG_RESET_COMMIT}:${driver_target_branch}" >&2
+        "+${GITTED_CONFIG_RESET_COMMIT}:refs/heads/${driver_target_branch}" >&2
 }
 
 ################################################################################
