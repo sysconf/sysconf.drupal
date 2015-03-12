@@ -448,7 +448,6 @@ gitted_driver_check_remote() {
     else
         _str="$_str non-local"
     fi
-    # nef_log "${_str}: $driver_url"
 }
 
 remote_local_git() {
