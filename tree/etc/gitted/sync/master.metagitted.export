@@ -1,3 +1,0 @@
-#!/bin/bash
-
-METAGITTED_CONF_PATH=metagitted NEF_LOG_NO_PREFIX=yes /usr/share/gitted/export/metagitted
