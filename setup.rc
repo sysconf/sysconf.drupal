@@ -8,4 +8,4 @@ sysconf_require_packages lxc
 killall -HUP dnsmasq
 
 # Refresh ip forwardings
-/usr/bin/share/metagitted/refresh-guest-status
+/usr/share/metagitted/refresh-guest-status
