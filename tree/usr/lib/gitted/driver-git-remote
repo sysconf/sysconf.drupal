@@ -403,7 +403,7 @@ gitted_driver_push_to_remote() {
 
     if [ "$remote_head" = $driver_remote_branch ]; then
         nef_log "non-bare repository: detaching HEAD from currently checked out: $remote_head"
-        remote_local_git --fatal checkout --quiet --detach
+        SYSCONF_UPDATE_ON_CHECKOUT=no remote_local_git --fatal checkout --quiet --detach
         # local _old_pwd="$PWD"
         # cd $driver_url
         # cd "$_old_pwd"
@@ -426,7 +426,7 @@ gitted_driver_push_to_remote() {
             done
         fi
         if ! remote_local_git checkout --quiet ${driver_remote_branch#refs/heads/}; then
-            nef_log "git-checkout failed with status $?: resetting $driver_remote_branch to driver_remote_commit"
+            nef_log "git-checkout failed with status $?: resetting $driver_remote_branch to: $driver_remote_commit"
             # git push --quiet "$driver_url" +${driver_remote_commit}:${driver_remote_branch}
             remote_local_git update-ref ${driver_remote_branch} ${driver_remote_commit}
             remote_local_git checkout --quiet ${driver_remote_branch#refs/heads/}
