@@ -425,7 +425,7 @@ script_command_status() {
     local _command=
     local _usage=0
     local _info_all=yes
-    local _info_state=yes
+    local _info_state=no
     local _info_driver=no
     local _info_system=no
     local _info_sysconf=no
@@ -529,6 +529,8 @@ script_command_status() {
                         nef_log "Sysconf profile trees:"
                         (driver_${current_driver}_exec --hybrid -c 'cd ${current_prefix}/sysconf && find */tree -not -type d | xargs ls -ld')
                     fi
+                else
+                    return 0
                 fi
             fi
         done
