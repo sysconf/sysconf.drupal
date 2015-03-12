@@ -51,7 +51,7 @@ fi
 # Setup hooks on /sysconf/.git
 if [ -d /sysconf/.git ]; then
     if [ ! -r /sysconf/.git/hooks/post-checkout ]; then
-        echo -e '#!/bin/sh\n[ "$SYSCONF_UPDATE_ON_CHECKOUT" != "no" ] && exec sysconf update' >/sysconf/.git/hooks/post-checkout
+        echo -e '#!/bin/sh\n[ "$SYSCONF_UPDATE_ON_CHECKOUT" != "no" ] && exec sysconf update\nexit 0' >/sysconf/.git/hooks/post-checkout
         chmod +x /sysconf/.git/hooks/post-checkout
     fi
     if [ ! -r /sysconf/.git/hooks/post-merge ]; then
