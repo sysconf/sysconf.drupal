@@ -404,9 +404,6 @@ gitted_driver_push_to_remote() {
     if [ "$remote_head" = $driver_remote_branch ]; then
         nef_log "non-bare repository: detaching HEAD from currently checked out: $remote_head"
         SYSCONF_UPDATE_ON_CHECKOUT=no remote_local_git --fatal checkout --quiet --detach
-        # local _old_pwd="$PWD"
-        # cd $driver_url
-        # cd "$_old_pwd"
     fi
 
     # fast-foward or not
