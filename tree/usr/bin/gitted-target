@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# gitted-client: manage a target Gitted through sysconf-target -- http://gitted.net
+# gitted-target: manage a target Gitted through sysconf-target -- http://gitted.net
 #
 # Gitted is a shell framework that turn a UNIX system into a Git repository
 # where the machine state is seen as a "Git work data" which can be
@@ -21,7 +21,7 @@
 #    20150222 reconception around "state commit" and partial rewrite using new sysconf-target
 ##
 
-nef_command_name=gitted-client
+nef_command_name=gitted-target
 nef_command_prefix=script_command
 
 # Source 'shell-command' from sysconf.base and find sysconf-target
@@ -29,7 +29,7 @@ script_dir=$(dirname $(readlink -f $0))
 PATH=$script_dir:$script_dir/../share/nef-common:$script_dir/../../../../sysconf.base/tree/usr/share/nef-common:/usr/share/nef-common . shell-command
 if [ $? -ne 0 ]; then
     echo "FATAL ERROR: could not find share/nef-common/shell-command" >&2
-    echo "HINT: keep gitted-client within its sysconf/sysconf.gitted tree (along with sysconf.base)" >&2
+    echo "HINT: keep gitted-target within its sysconf/sysconf.gitted tree (along with sysconf.base)" >&2
     echo "      (symlinking works; sysconf being installed in /usr also works)" >&2
     exit 2
 fi
@@ -122,7 +122,7 @@ script_command_reset() {
 # Helper command to get started with a running Gitted machine
 #
 # Calling this command will:
-#   - Register gitted-client on the local repo and setup the "ted" git alias
+#   - Register gitted-target on the local repo and setup the "ted" git alias
 #   - Create the <target> machine/remote (if needed)
 #   - Copy this local sysconf branch to it
 #   - Register/check a Git remote on the local repo to control <target> easily
@@ -174,9 +174,9 @@ script_command_init() {
 
 # command: register [what] [git-config-scope]
 #
-# Copy gitted-client to a stable location and configure Git for easy use
+# Copy gitted-target to a stable location and configure Git for easy use
 #
-# To ensure gitted-client availability within the scope specified by
+# To ensure gitted-target availability within the scope specified by
 # [git-config-scope], the script is copied to the appropriate location,
 # such as: .git, ~/bin, /usr/bin or another dir as given by --script-dir.
 #
@@ -184,20 +184,20 @@ script_command_init() {
 #
 # [what] designates what is setup. If not given, all things are setup. These are:
 #
-#       --alias         Configures alias.ted to !(...)/gitted-client
-#       --url           Configures "gitted:" URL rewriting to "ext::(...)gitted-client(...)"
+#       --alias         Configures alias.ted to !(...)/gitted-target
+#       --url           Configures "gitted:" URL rewriting to "ext::(...)gitted-target(...)"
 #
 # [git-config-scope] designates where the config is written, as given to git-config(1):
 #
-#       --local         gitted-client is copied by default to .git
+#       --local         gitted-target is copied by default to .git
 #                       Config is written to the repository .git/config file.
 #                       This is the default behavior.
 #
-#       --system        gitted-client is copied by default to ~/bin
+#       --system        gitted-target is copied by default to ~/bin
 #                       Config is written to system-wide $(prefix)/etc/gitconfig
 #                       rather than the repository .git/config.
 #
-#       --global        gitted-client is copied by default to /usr/bin
+#       --global        gitted-target is copied by default to /usr/bin
 #                       Write to global ~/.gitconfig file rather than the
 #                       repository .git/config.
 #
@@ -210,9 +210,9 @@ script_command_init() {
 #   --symbolic-link             Make symbolic links instead of copying
 #   --no-copy                   Do not copy the script, use the current location instead
 #                               (even if not appropriate)
-#   --script-dir <dir>          Path to directory where gitted-client is copied
-#   --force                     Overwrite existing copy of gitted-client
-#   --alias-name <name>         Name of command alias to gitted-client (see --alias)
+#   --script-dir <dir>          Path to directory where gitted-target is copied
+#   --force                     Overwrite existing copy of gitted-target
+#   --alias-name <name>         Name of command alias to gitted-target (see --alias)
 #   --url-scheme <scheme>       Register a URL scheme other than default "gitted" (see --url)
 ##
 script_command_register() {
@@ -317,7 +317,7 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
             cd $(git rev-parse --show-toplevel)
             local _dir_spec=$(git rev-parse --git-dir)
         fi
-        _git_config_cmd "url.ext::${_dir_spec}/gitted-client %S .insteadOf" "${_url_scheme}:"
+        _git_config_cmd "url.ext::${_dir_spec}/gitted-target %S .insteadOf" "${_url_scheme}:"
     fi
 }
 
@@ -329,10 +329,10 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
 # such as git-fetch(1).
 #
 # Usage examples:
-#   git fetch "ext::/path/to/gitted-client %S lxc:container" sysconf
-#   git fetch "ext::/path/to/gitted-client %S ssh:user@host" mysql
+#   git fetch "ext::/path/to/gitted-target %S lxc:container" sysconf
+#   git fetch "ext::/path/to/gitted-target %S ssh:user@host" mysql
 #
-# After running "gitted-client register", you may use the "gitted:" scheme:
+# After running "gitted-target register", you may use the "gitted:" scheme:
 #   git fetch gitted:lxc:container sysconf
 #   git fetch gitted:ssh:user@host mysql
 #
@@ -368,10 +368,10 @@ script_command_git-upload-pack() {
 # git-push(1).
 #
 # Usage examples:
-#   git push "ext::/path/to/gitted-client %S lxc:container" sysconf
-#   git push "ext::/path/to/gitted-client %S ssh:user@host" mysql_bak:mysql
+#   git push "ext::/path/to/gitted-target %S lxc:container" sysconf
+#   git push "ext::/path/to/gitted-target %S ssh:user@host" mysql_bak:mysql
 #
-# After running "gitted-client register", you may use the "gitted:" scheme:
+# After running "gitted-target register", you may use the "gitted:" scheme:
 #   git push gitted:lxc:container42 mysql
 #   git push gitted:ssh:user@host.net mysql_bak:mysql
 #
