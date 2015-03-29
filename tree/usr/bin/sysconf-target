@@ -729,22 +729,24 @@ driver_ssh_exec() {
     # So we need to pass a shell command lines (wrapping args with quotes).
 
     local _argv=()
-    local _sh_c=""
+    # local _sh_c=""
 
     while [ -n "$1" ]; do
         case "$1" in
             --hybrid) shift ;;
-            -c) _sh_c="$_sh_c '$2'"; shift 2 ;;
-            # -c) _argv=("${_argv[@]}" $2); shift 2 ;;
-            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
-            *) _sh_c="$_sh_c '$1'"; shift ;;
-            # *) _argv=("${_argv[@]}" "$1"); shift ;;
+            # -c) _sh_c="$_sh_c '$2'"; shift 2 ;;
+            -c) _argv=("${_argv[@]}" "$2"); shift 2 ;;
+            # --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
+            --) shift ;;
+            # *) _sh_c="$_sh_c '$1'"; shift ;;
+            *) _argv=("${_argv[@]}" "'$1'"); shift ;;
         esac
     done
 
     nef_log -v "driver_ssh_exec <$driver_ssh_userhost> ${_argv[*]}"
-    exec ssh $driver_ssh_userhost "$_sh_c"
-    # exec ssh $driver_ssh_userhost -- "${_argv[@]}"
+    # nef_log -v "driver_ssh_exec <$driver_ssh_userhost> ${_sh_c}"
+    # exec ssh $driver_ssh_userhost $_sh_c
+    exec ssh $driver_ssh_userhost -- "${_argv[@]}"
 }
 
 
