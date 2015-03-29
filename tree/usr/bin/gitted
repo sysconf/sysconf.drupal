@@ -541,7 +541,7 @@ script_command_reset() {
 #
 # This command initializes the local system with a Gitted repository.
 #
-# /local/repository.git and hooks are created/fixed for use by Gitted.
+# /local.repository.git and hooks are created/fixed for use by Gitted.
 # State branches are initialized (command "init" of drivers).
 #
 # It is safe to run "init" multiples times : no data will be erased, like with git-init(1).
@@ -609,7 +609,7 @@ script_command_git-upload-pack() {
     exec git upload-pack $GIT_DIR
 }
 
-# command: git-receive-pack
+# command: git-receive-pack [--push-mode <mode>]
 #
 # Forward Git protocol to /local/repository.git
 #
@@ -662,16 +662,17 @@ script_command_git-hook-pre-receive() {
 
     [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command git-receive-pack "too many arguments"
 
-    nef_log "gitted: hook-pre-receive: doing nothing"
+    return 0
+    # nef_log "gitted: hook-pre-receive: doing nothing"
     # script_command_status --quiet
 }
 
 # command: git-hook-update <ref-name> <old-commit> <new-commit>
 #
-# Update IO work state with new commit
+# Update a state branch
 #
 # This command should not be used directly, but be called by
-# /local.repository.git/hooks/update (run 'gitted init' to setup).
+# /local.repository.git/hooks/update (setup with 'gitted init').
 ##
 script_command_git-hook-update() {
     local _argv=()
@@ -689,7 +690,7 @@ script_command_git-hook-update() {
     [ "${#_argv[@]}" -gt 3 ] && nef_fatal_usage_command git-receive-pack "too many arguments"
 
     local _branch=${_argv[0]#refs/heads/}
-    nef_log "gitted: hook-update (branch=$_branch) on ref: ${_argv[@]}"
+    nef_log "gitted: hook-update (branch=$_branch) on ref: ${_argv[0]}: ${_argv[1]:0:7} -> ${_argv[2]:0:7}"
     script_command_reset --state-only --keep $_branch --to ${_argv[2]}
 }
 
