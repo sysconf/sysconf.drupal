@@ -317,7 +317,7 @@ HINT: provide --force to overwrite"
 
         nef_log "Sending Sysconf data to target..."
         tar c . | driver_${current_driver}_exec --hybrid \
-            -c "mkdir -p ${current_prefix}/sysconf && tar x -C ${current_prefix}/sysconf --no-same-owner --no-same-permissions"
+            -c "mkdir -p -m 755 ${current_prefix}/sysconf && tar x -C ${current_prefix}/sysconf --no-same-owner --no-same-permissions"
 
         if [ -n "$_tmp_dir" ]; then
             cd $_former_dir
