@@ -178,11 +178,12 @@ compile_conf_rec()
     sysconf_compiled_confs=(${sysconf_compiled_confs[@]} $config)
 
     [ -d $config/tree ] && {
-	nef_log "Merging: $confpath/$config/tree/*"
+	nef_log "Merging tree: $confpath/$config/tree/"
 	local_cp -sr $confpath/$config/tree/* $confpath/compiled/
-    } || {
-	nef_log -v "Ignoring tree-less conf: $config"
     }
+    # || {
+    # nef_log -v "Ignoring tree-less conf: $config"
+    # }
     for dep in `cat $config/deps`; do
 	compile_conf_rec $dep
     done
@@ -199,8 +200,8 @@ install_compiled()
 
 load_environment()
 {
-        sysconf_loaded_confs=()
-        load_environment_for_conf_rec actual
+    sysconf_loaded_confs=()
+    load_environment_for_conf_rec actual
 }
 load_environment_for_conf_rec()
 {
@@ -221,8 +222,8 @@ load_environment_for_conf_rec()
     if [ -r environment.rc ]; then
 	nef_log -v "Loading environment: $config"
         . environment.rc
-    else
-	nef_log -v "Environment not defined: $config"
+    # else
+    #     nef_log -v "Environment not defined: $config"
     fi
 }
 
