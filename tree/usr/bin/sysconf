@@ -62,7 +62,7 @@ Where <command> is one of:
 	This is a frequently used command as we move/"standardize" config/misc
 	files from real location (like /etc) to a sysconf repository.
 
-	Use the '-c' option to specify the sysconf profile to use
+	Use the '-c' option to specify the sysconf layer to use
         (default to 'actual').
 
     cmd command [command_args]
@@ -96,8 +96,8 @@ Typical conf repository include:
     /environment.rc
         Shell code sourced in the inheritance stack before all setup.rc
         are sourced (one stage before). Useful to define variables that
-        may be overloaded by higher profiles that affect the setup.rc of
-        lower profiles.
+        may be overloaded by higher layers that affect the setup.rc of
+        lower layers.
 
 More help on project website: https://github.com/geonef/sysconf.base
 EOF
@@ -160,9 +160,9 @@ compile_conf()
         # 'sysconf_compiled_confs' contains the names of the confs
         # that have been compiled already, to avoid some deps
         # to be processed multiple times
+        nef_log "Compiling layers into: $confpath/compiled/"
         sysconf_compiled_confs=()
         compile_conf_rec "$@"
-        nef_log "Compilation done in: $confpath/compiled"
     )
 }
 
@@ -194,7 +194,7 @@ install_compiled()
 {
     chdir_confpath
 
-    nef_log "Installing files from '$confpath/compiled' to '$targetpath'"
+    nef_log "Installing files from $confpath/compiled/ to: $targetpath"
     local_cp -r $confpath/compiled/* $targetpath || nef_fatal "copy failed"
 }
 
@@ -264,7 +264,7 @@ update_system_from_conf_rec()
         )
     }
     [ -r setup.rc ] && {
-	nef_log "Setting-up profile: $config"
+	nef_log "Setting-up layer: $config"
         (
             NEF_LOG_PREFIX="$nef_command_name: $config"
             . /usr/share/nef-common/shell-command || exit 2
