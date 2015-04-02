@@ -17,6 +17,7 @@ as a GIT repository.
 
 ## Documentation
 
+* See official website: http://gitted.io/
 * [Understanding Gitted](doc/understanding.md)
 * [How to use a Gitted-powered GIT repository](doc/howto-manipulate.md)
 * [How to setup Gitted for an application](doc/howto-create-new.md)
