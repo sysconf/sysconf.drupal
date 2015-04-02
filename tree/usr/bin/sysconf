@@ -181,7 +181,7 @@ compile_conf_rec()
 	nef_log "Merging: $confpath/$config/tree/*"
 	local_cp -sr $confpath/$config/tree/* $confpath/compiled/
     } || {
-	nef_log "Ignoring tree-less conf: $config"
+	nef_log -v "Ignoring tree-less conf: $config"
     }
     for dep in `cat $config/deps`; do
 	compile_conf_rec $dep
@@ -367,15 +367,15 @@ nef_log() {
 
     local txt="$*"
     local line="$*"
-    # local prefix="$NEF_LOG_PREFIX"
-    # [ -z "$prefix" ] && prefix="$nef_command_name"
+    local prefix="$NEF_LOG_PREFIX"
+    [ -z "$prefix" ] && prefix="$nef_command_name"
 
     # if [ "x$NEF_LOG_DATE" = xyes ]; then
     #     date="`date +'%Y-%m-%d %H:%M:%S:%N' | sed -E 's/.{6}$//'`"
     #     prefix="$prefix $date"
     # fi
 
-    # line="$prefix: ${_opt_prepend}${line}"
+    line="$prefix: ${_opt_prepend}${line}"
     line="${_opt_prepend}${line}"
 
     if [ "$NEF_LOG_FILE" = "" ]; then
