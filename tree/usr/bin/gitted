@@ -433,7 +433,7 @@ script_command_reset() {
 
     local _tmp_ref=$(script_make_ref_date_prefix).commit
     local i=0
-    local _ok
+    local _ok=yes
     for _state_branch in $_expanded_branches; do
         (
             # nef_log "branch: $_state_branch"
@@ -452,8 +452,6 @@ script_command_reset() {
                 nef_log "Resetting branch state [$GITTED_CONFIG_STATE_DRIVER]: $_state_branch"
                 _commit=$GITTED_CONFIG_STATE_COMMIT
             fi
-
-            _ok=yes
 
             if [ $_mode != soft ]; then
                 local _msgp="driver $GITTED_CONFIG_STATE_DRIVER [$script_driver_branch]"
