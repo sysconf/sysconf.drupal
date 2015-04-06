@@ -8,3 +8,11 @@
 
 # This file is empty. Feel from to override it from a more specific
 # sysconf profile such as "actual"
+
+dhcp-host=mysql,10.0.3.82
+dhcp-host=frontapp,10.0.3.31
+dhcp-host=crawler,10.0.3.41
+dhcp-host=nginx-tool,10.0.3.40
+dhcp-host=redmine,10.0.3.42
+dhcp-host=gitolite,10.0.3.43
+dhcp-host=work,10.0.3.48
