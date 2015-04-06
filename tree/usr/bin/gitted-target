@@ -88,7 +88,7 @@ script_command_commit() {
         fi
     fi
     if [ -n "$_author" ]; then
-        _argv=(--author "$_author" "${_argv[@]}")
+        _argv=("${_argv[@]}" --author "$_author")
     fi
 
     script_server_command commit "${_argv[@]}"
@@ -493,7 +493,7 @@ script_server_command() {
         # echo remote: $_remote
         _target=$(git config remote.${_remote}.url)
         if [ -z "$_target" ]; then
-            (nef_fatal_usage_command "$_command" --status ""  \
+            (nef_fatal_usage_command "$_command"  \
                 "Please specify the gitted target, as current branch has no upstream: $(git symbolic-ref -q HEAD)")
             echo >&2
             error_on_missing_default_upstream ted "run 'gitted $_command'" "on" >&2
