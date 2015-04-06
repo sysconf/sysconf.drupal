@@ -88,7 +88,7 @@ script_command_commit() {
         fi
     fi
     if [ -n "$_author" ]; then
-        _argv=("${_argv[0]}" --author "$_author")
+        _argv=(--author "$_author" "${_argv[@]}")
     fi
 
     script_server_command commit "${_argv[@]}"
