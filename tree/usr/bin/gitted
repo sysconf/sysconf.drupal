@@ -281,9 +281,7 @@ script_command_commit() {
 
     script_return_status=yes # tell the caller not throw an error in case of non-null status
 
-    nef_log "1111111 ${_argv[@]}"
     local _expanded_branches=$(script_expand_state_branches --usage-command status $_expand_opts -- "${_argv[@]}")
-    nef_log 222222222
     [ -z "$_expanded_branches" ] && return 1
 
     local _tmp_ref=$(script_make_ref_date_prefix).commit
