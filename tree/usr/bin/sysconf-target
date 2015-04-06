@@ -530,7 +530,7 @@ script_command_status() {
                         (driver_${current_driver}_exec --hybrid -c 'cd ${current_prefix}/sysconf && find */tree -not -type d | xargs ls -ld')
                     fi
                 else
-                    return 0
+                    return 1
                 fi
             fi
         done
