@@ -107,6 +107,21 @@ SYSCONF_TARGET_DEFAULT_DISTRIB=debian:wheezy
 #          --distrib ubuntu:precise             (arch is guessed from 'uname')
 #          --distrib debian                     ('wheezy' is default for 'debian')
 #
+#   --backing-store <type>[:<name>]
+#
+#       Set backing store for the new target. Actually only supported by the
+#       'lxc' driver, where <type> is forwarded as lxc-create -B <type> and <name>
+#       as lxc-create --vgname <name> (if <type> is "lvm").
+#
+#       Example: --backing-store lvm:vg0
+#
+#   --fssize <size>
+#
+#      Set the filesystem size for the new target. Currently only supported by the
+#      'lxc' driver, where <size> is forward to lxc-create --fssize <size>.
+#
+#      Example: --fssize 15G
+#
 #   --custom <comma-separated>          Apply custom settings to target
 #      (multiple keys can be given separated with commas,
 #       the --custom option can appear multiple times as well)
@@ -157,6 +172,16 @@ script_command_init() {
             --distrib) script_init_distrib="$2"; shift 2 ;;
             --custom) _custom="$_custom $2"; shift 2 ;;
             --lxc-create-opts) shift; driver_lxc_create_opts="$1"; shift ;;
+            --backing-store)
+                local _ifs="$IFS"; IFS=:
+                local _tmp=($2); IFS="$_ifs"
+                echo "----------${_tmp[0]}-${_tmp[1]}" >&2
+                driver_lxc_create_opts="$driver_lxc_create_opts -B ${_tmp[0]}"
+                [ "${_tmp[0]}" = lvm -a -n "${_tmp[1]}" ] && \
+                    driver_lxc_create_opts="$driver_lxc_create_opts --vgname ${_tmp[1]}"
+                echo ----driver_lxc_create_opts:$driver_lxc_create_opts
+                shift 2 ;;
+            --fssize) driver_lxc_create_opts="$driver_lxc_create_opts --fssize $2"; shift 2 ;;
             --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
             -h) script_command_help init; return ;;
             -*) script_eval_common_option "$1"; shift ;;
