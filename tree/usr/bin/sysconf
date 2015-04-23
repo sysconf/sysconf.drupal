@@ -336,7 +336,7 @@ sysconf_require_packages()
     if [ -n "$_packages" ]; then
         export DEBIAN_FRONTEND=noninteractive
         # sysconf_apt-get install --yes --no-upgrade $_packages
-        sysconf_apt-get install --yes -o Dpkg::Options::=--force-confdef --no-upgrade $_packages
+        sysconf_apt-get install --yes --force-yes -o Dpkg::Options::=--force-confdef --no-upgrade $_packages
     fi
 }
 
