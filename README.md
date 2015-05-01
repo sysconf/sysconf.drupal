@@ -1,5 +1,8 @@
 # Gitted: Import/export machine sate through git push/pull
 
+* See new official website: http://gitted.io/
+* Official Git repository on GitHub: https://github.com/sysconf/sysconf.gitted
+
 Gitted solves 2 problems:
 
 * website software *installation* (for example, a CMS like Drupal) can
@@ -18,10 +21,8 @@ as a GIT repository.
 ## Documentation
 
 * See official website: **http://gitted.io/**
-* OBSOLETE (related to v0, now gitted.io is about v1):
-  * [Understanding Gitted](doc/understanding.md)
-  * [How to use a Gitted-powered GIT repository](doc/howto-manipulate.md)
-  * [How to setup Gitted for an application](doc/howto-create-new.md)
+  * [Setup a new Gitted Sysconf repository](http://gitted.io/tutorial/setup-gitted-sysconf/)
+* Documentation in [doc/](doc/) is OBSOLETE (related to v0, now gitted.io is about v1):
 
 
 ## Authors & history
