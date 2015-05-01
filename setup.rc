@@ -2,7 +2,8 @@
 
 # Previously sourced: ../sysconf.base/tree/usr/share/nef-common/shell-command
 
-
+# /sysconf is often created with 0700 so we need to fix it
+chmod a+rX /sysconf
 
 ######################################################################
 #

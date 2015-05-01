@@ -30,6 +30,10 @@ SYSCONF_ETC_CONFIG_COMMENT_TRAIL=""
 SYSCONF_ETC_CONFIG_EXT=
 SYSCONF_ETC_CONFIG_HEADER=
 SYSCONF_ETC_CONFIG_FOOTER=
+# if empty, source_conf_d will be deduced from $SYSCONF_ETC_CONFIG_TARGET_CONF
+SYSCONF_ETC_CONFIG_SOURCE_CONF_D=
+# if empty, owner of target config file is not modified
+SYSCONF_ETC_CONFIG_OWNER=
 
 SYSCONF_ETC_CONFIG_ONCHANGE_HOOK() {
     true
@@ -147,8 +151,11 @@ script_update_config() {
 
     local configpath=$SYSCONF_ETC_CONFIG_TARGET_CONF
     local configfile=$(basename "$configpath")
-    local configdir=$(dirname "$configpath")
-    local configdir_d="$configdir/$configfile.d"
+    local configdir_d=$SYSCONF_ETC_CONFIG_SOURCE_CONF_D
+    if [ -z "$configdir_d" ]; then
+        local configdir=$(dirname "$configpath")
+        local configdir_d="$configdir/$configfile.d"
+    fi
 
     if [ -z "$SYSCONF_ETC_CONFIG_EXT" ]; then
         SYSCONF_ETC_CONFIG_EXT="$configfile"
@@ -214,10 +221,32 @@ script_update_config() {
         elif [ -f "${configpath}" ]; then
             nef_log -v "Backing up former file to: ${configpath}.bak"
             cp "${configpath}" "${configpath}.bak"
+        else
+            local _dir=$(dirname $configpath)
+            local _ifs="$IFS"; IFS=/
+            local _parts=( $_dir ); IFS="$_ifs"
+            local _base=
+            # unset ${_parts[0]}
+            for _part in "${_parts[@]}"; do
+                if [ -n "$_part" ]; then
+                    if [ ! -d $_base/$_part ]; then
+                        mkdir $_base/$_part
+                        if [ -n "$SYSCONF_ETC_CONFIG_OWNER" ]; then
+                            nef_log "Setting ownership '$SYSCONF_ETC_CONFIG_OWNER' to created dir: $_base/$_part"
+                            chown $SYSCONF_ETC_CONFIG_OWNER $_base/$_part
+                        fi
+                    fi
+                    _base=$_base/$_part
+                fi
+            done
         fi
         cat $_temp >"${configpath}"
         rm -f $_temp
         count=$(wc -l $configpath | sed 's/ .*//')
+        if [ -n "$SYSCONF_ETC_CONFIG_OWNER" ]; then
+            nef_log "Setting ownership to: $SYSCONF_ETC_CONFIG_OWNER"
+            chown $SYSCONF_ETC_CONFIG_OWNER $configpath
+        fi
         nef_log "Wrote $configpath with $count lines out of $filecount file(s)"
 
         SYSCONF_ETC_CONFIG_ONCHANGE_HOOK
