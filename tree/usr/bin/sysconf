@@ -360,10 +360,11 @@ sysconf_fix_user()
     grep -q ^$_name: /etc/passwd || {
         echo "Creating missing user: $_name"
         useradd "$@" $_name
-        mkdir -p ~$_name/.ssh
-        chmod 750 ~$_name/.ssh
-        cp ~root/.ssh/authorized_keys ~$_name/.ssh/
-        chown -R $_name:$_name ~$_name
+        local _home="~$_name"
+        mkdir -p $_home/.ssh
+        chmod 750 $_home/.ssh
+        cp "~root/.ssh/authorized_keys" $_home/.ssh/
+        chown -R $_name:$_name $_home
     }
 }
 
