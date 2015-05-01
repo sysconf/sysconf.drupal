@@ -1,0 +1,17 @@
+# Installer script for sysconf profile: sysconf.catapatate.common       -*- shell-script -*-
+
+_packages=""
+_packages="$_packages openssh-server nano"
+_packages="$_packages collectd"
+
+sysconf_require_packages "$_packages"
+
+sysconf_fix_user cataphile --uid 942 --create-home --shell /bin/bash
+
+if [ -f /root/.bashrc ]; then
+    mv /root/.bashrc{,.orig}
+fi
+
+if [ -f ~cataphile/.bashrc ]; then
+    mv ~cataphile/.bashrc{,.orig}
+fi
