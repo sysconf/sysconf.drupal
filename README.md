@@ -29,5 +29,6 @@ as a GIT repository.
 This tool was was designed and implemented is maintained so far by
 Jean-Francois Gigand <jf@gigand.fr>.
 
-The first version of [the script](tree/usr/bin/sysconf) was written in
-early 2014 and released as Free Software on GitHub a few months later.
+* Early 2014: first version of [the script](tree/usr/bin/sysconf)
+* Spring 2014: released as Free Software on GitHub
+* Early 2015: rewrite from v0 to v1 (with [gitted-target](tree/usr/bin/gitted-target))
