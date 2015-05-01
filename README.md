@@ -1,6 +1,7 @@
 # Sysconf
 
 * See new official website: http://gitted.io/
+* Official Git repository on GitHub: https://github.com/sysconf/sysconf.base
 
 Sysconf suggests a way to organise custom system files (like
 ```/etc``` config or ```/usr/bin/``` scripts) in a central directory
