@@ -433,9 +433,12 @@ script_command_reset() {
 
     local _tmp_ref=$(script_make_ref_date_prefix).commit
     local i=0
-    local _ok=yes
+    local _errors=0
+    local _error_branches=
+
     for _state_branch in $_expanded_branches; do
         (
+            local _ok=yes
             # nef_log "branch: $_state_branch"
             script_load_state_config $_state_branch || exit # terminate sub-shell
 
@@ -488,13 +491,26 @@ script_command_reset() {
                 echo "[${_state_branch} ${_commit:0:7}] ${_state}Reset OK to: $(script_format_commit_label $_commit)"
             fi
 
-        ) || exit $? #nef_fatal "state branch failed to be reset: $_state_branch"
-        (( i++ ))
+            [ $_ok = yes ]
+
+        )
+        if [ $? -eq 0 ]; then
+            (( i++ ))
+        else
+            (( _errors++ ))
+            _error_branches="$_error_branches $_state_branch"
+            # nef_fatal "state branch failed to be reset: $_state_branch"
+        fi
     done
 
-    if [ $i -gt 0 ]; then
-        [ "$_ok" = yes ]
-        return
+    # [ $i -eq 0 ] && nef_log "No reset happened actually."
+
+    if [ $_errors -gt 0 ]; then
+        nef_log "$_errors branches failed to be reset: $_error_branches"
+        return 2
+    fi
+
+    return 0
 
         # test -n ""
         # nef_log "$i branch(es) were reset successfully."
@@ -504,11 +520,6 @@ script_command_reset() {
         #     || nef_fatal "failed to copy the refs from: $GIT_DIR/$_tmp_ref/*"
         # rm -rf $GIT_DIR/$_tmp_ref
         # nef_log "Done."
-    else
-        nef_log
-        nef_log "No reset happened actually."
-        exit 2
-    fi
 }
 
 ######################################################################

@@ -80,6 +80,12 @@ script_command_commit() {
         esac
     done
 
+    local _target=
+    if script_is_target_id "${_argv[0]}"; then
+        _target="${_argv[0]}"
+        unset _argv[0]
+    fi
+
     if [ -z "$_author" ]; then
         _author=$(git config user.name)
         local _email=$(git config user.email)
@@ -88,10 +94,10 @@ script_command_commit() {
         fi
     fi
     if [ -n "$_author" ]; then
-        _argv=("${_argv[@]}" --author "$_author")
+        _argv=(--author "$_author" "${_argv[@]}")
     fi
 
-    script_server_command commit "${_argv[@]}"
+    script_server_command commit $_target "${_argv[@]}"
 }
 
 # command: reset [<target>]  <state branches>  [--to <commit>] [<mode>]
