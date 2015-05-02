@@ -50,7 +50,7 @@ gitted_driver_list() {
     # GITTED_CONFIG_TARGET_MYSUBTEST_TARGET=lxc:mysubtest
     local _target_list=$(
         (
-            env | grep ^GITTED_CONFIG_TARGET_ \
+            env | grep -E ^GITTED_CONFIG_TARGET_.+_TARGET \
                 | sed -r 's/^GITTED_CONFIG_TARGET_([^=]+)_TARGET=(.*)/\L\1\E \2/'
             sysconf-target status 'lxc:*' --state | sed -r 's/^([^:]+):([^ ]+) .*/\2 \1:\2/'
         ) | sort | uniq
@@ -115,13 +115,14 @@ gitted_driver_commit() {
     # [ $_status -eq 0 ] \
     #     || nef_fatal --status $? "gitted-target commit failed with status $? on target: $driver_target"
     (
+        echo Running: gitted-target commit "$driver_target" "$driver_target_branch" "${_opts[@]}" >&2
         gitted-target commit "$driver_target" "$driver_target_branch" "${_opts[@]}" 2>&1
         _status=$?
         [ $_status = 2 ] && exit 0
         [ $_status -eq 0 ] \
             || nef_fatal --status $_status "gitted-target commit failed with status $_status on target: $driver_target"
     ) | sed "s/^/${driver_target}: /" >&2
-    [ ${PIPESTATUS[0]} -eq 0 ] || exit ${PIPESTATUS[0]}
+    [ ${PIPESTATUS[0]} -eq 0 ] #|| exit ${PIPESTATUS[0]}
 
     git fetch "ext::gitted-target %S $driver_target" "$driver_target_branch" >&2
     git rev-parse --verify FETCH_HEAD # print full commit ID as we are expected to
@@ -146,9 +147,17 @@ gitted_driver_reset() {
         fi
 
         if [ $_need_init = yes ]; then
+            local _init_options=()
+
+            [ -n "$GITTED_CONFIG_STATE_INIT_BACKING_STORE" ] && \
+                _init_options=(${_init_options[@]} --backing-store "$GITTED_CONFIG_STATE_INIT_BACKING_STORE")
+            [ -n "$GITTED_CONFIG_STATE_INIT_FSSIZE" ] && \
+                _init_options=(${_init_options[@]} --fssize "$GITTED_CONFIG_STATE_INIT_FSSIZE")
+
             sysconf-target init $driver_target -v \
                 --custom ${GITTED_CONFIG_STATE_INIT_CUSTOM,-ssh-pubkey,git-user} \
                 --git-ref $GITTED_CONFIG_RESET_COMMIT $GIT_DIR \
+                ${_init_options[@]} \
                 || nef_fatal "Could not initialize target: $driver_target"
             # TODO: manage "--custom unconfined" based on config
         fi
@@ -204,6 +213,11 @@ driver_load_target() {
     # nef_log "driver_target_name: $driver_target_name"
     # nef_log "driver_target_branch: $driver_target_branch"
     # nef_log "driver_target: $driver_target"
+
+    # Merge target-specific variables into GITTED_CONFIG_STATE
+    code=$(env | grep ^GITTED_CONFIG_TARGET_${driver_target_name^^} \
+        | sed -r "s/^GITTED_CONFIG_TARGET_${driver_target_name^^}_([^=]+)=(.*)/GITTED_CONFIG_STATE_\1=\"\2\"/" )
+    eval "$code"
 
     driver_target_state=$(sysconf-target status --state "$driver_target" | cut -d' ' -f2)
     # nef_log "State of target '$_target' is: $driver_target_state"

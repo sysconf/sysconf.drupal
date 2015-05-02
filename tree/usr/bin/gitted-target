@@ -80,6 +80,12 @@ script_command_commit() {
         esac
     done
 
+    local _target=
+    if script_is_target_id "${_argv[0]}"; then
+        _target="${_argv[0]}"
+        unset _argv[0]
+    fi
+
     if [ -z "$_author" ]; then
         _author=$(git config user.name)
         local _email=$(git config user.email)
@@ -88,10 +94,10 @@ script_command_commit() {
         fi
     fi
     if [ -n "$_author" ]; then
-        _argv=("${_argv[0]}" --author "$_author")
+        _argv=(--author "$_author" "${_argv[@]}")
     fi
 
-    script_server_command commit "${_argv[@]}"
+    script_server_command commit $_target "${_argv[@]}"
 }
 
 # command: reset [<target>]  <state branches>  [--to <commit>] [<mode>]
@@ -167,8 +173,8 @@ script_command_init() {
         local _name=$(echo $_target | cut -d: -f2)
         nef_log "Adding and fetching git remote: $_name -> gitted:$_target"
         git config remote.gitted.url >/dev/null \
-            || git remote add $_name gitted:$_target \
-            || _fail "git remote add $_name gitted:$_target"
+            || git remote add $_name gitted:$_target
+        [ $? -eq 0 ] || nef_log "WARNING: failed to add git remote '$_name': gitted:$_target"
         git fetch $_name
 }
 
@@ -493,7 +499,7 @@ script_server_command() {
         # echo remote: $_remote
         _target=$(git config remote.${_remote}.url)
         if [ -z "$_target" ]; then
-            (nef_fatal_usage_command "$_command" --status ""  \
+            (nef_fatal_usage_command "$_command"  \
                 "Please specify the gitted target, as current branch has no upstream: $(git symbolic-ref -q HEAD)")
             echo >&2
             error_on_missing_default_upstream ted "run 'gitted $_command'" "on" >&2
