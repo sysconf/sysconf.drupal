@@ -184,23 +184,23 @@ script_update_config() {
     }
 
     nef_log -v "Generating $configpath out of: $configdir_d/"
-    content="$SYSCONF_ETC_CONFIG_HEADER\n"
+    content="$SYSCONF_ETC_CONFIG_HEADER"$'\n'
 
     case $SYSCONF_ETC_CONFIG_TYPE in
         concatenation)
             for file in $files; do
 	        nef_log -v "Including file: $file"
 	        filecontent=$(cat $file)
-	        content="$content\n${SYSCONF_ETC_CONFIG_COMMENT_LEAD}${file}${SYSCONF_ETC_CONFIG_COMMENT_TRAIL}\n$filecontent"
+	        content="$content"$'\n'"${SYSCONF_ETC_CONFIG_COMMENT_LEAD}${file}${SYSCONF_ETC_CONFIG_COMMENT_TRAIL}"$'\n'"$filecontent"
             done
             ;;
         reference)
-	    content="$content\n$SYSCONF_ETC_CONFIG_BEGIN"
+	    content="$content"$'\n'"$SYSCONF_ETC_CONFIG_BEGIN"
             for file in $files; do
 	        nef_log -v "Reference file: $file"
                 local escaped=$(echo "$file" | sed 's/\//\\\//g')
                 local ref=$(echo "$SYSCONF_ETC_CONFIG_EXPRESSION" | sed "s/%p/${escaped}/")
-	        content="$content\n$ref"
+	        content="$content"$'\n'"$ref"
             done
             ;;
         *)
@@ -211,8 +211,15 @@ script_update_config() {
     content="${content}${SYSCONF_ETC_CONFIG_FOOTER}"
     _temp=$(mktemp)
     _md5=$(md5sum "$configpath" 2>/dev/null | sed 's/ .*//')
-    echo -e "${SYSCONF_ETC_CONFIG_COMMENT_LEAD}${SYSCONF_ETC_CONFIG_GENERATED_TOKEN}${SYSCONF_ETC_CONFIG_COMMENT_TRAIL}\n${content}" \
-        >"$_temp"
+    # echo -e "${SYSCONF_ETC_CONFIG_COMMENT_LEAD}${SYSCONF_ETC_CONFIG_GENERATED_TOKEN}${SYSCONF_ETC_CONFIG_COMMENT_TRAIL}\n${content}" \
+    #     >"$_temp"
+
+cat <<EOF >"$_temp"
+${SYSCONF_ETC_CONFIG_COMMENT_LEAD}${SYSCONF_ETC_CONFIG_GENERATED_TOKEN}${SYSCONF_ETC_CONFIG_COMMENT_TRAIL}
+${SYSCONF_ETC_CONFIG_COMMENT_LEAD}DO NOT EDIT! Instead, edit: ${configdir_d}${SYSCONF_ETC_CONFIG_COMMENT_TRAIL}
+${SYSCONF_ETC_CONFIG_COMMENT_LEAD}Then update this file by running: $0 update ${SYSCONF_ETC_CONFIG_NAME}${SYSCONF_ETC_CONFIG_COMMENT_TRAIL}
+${content}
+EOF
 
     if [ "$_md5" != "$(md5sum $_temp | sed 's/ .*//')" ]; then
         if [ -f "${configpath}" -a ! -f "${configpath}.orig" ]; then
