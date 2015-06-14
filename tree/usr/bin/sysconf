@@ -277,7 +277,7 @@ update_system_from_conf_rec()
 add_file()
 {
     local config="$1"
-    local file="$2"
+    local file=$(realpath "$2")
     local target="$confpath/$config/tree$file"
 
     [ -f "$file" ] || nef_fatal "warning: arg is not a regular file: $file"
