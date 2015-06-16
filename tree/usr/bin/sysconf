@@ -177,12 +177,13 @@ compile_conf_rec()
     done
     sysconf_compiled_confs=(${sysconf_compiled_confs[@]} $config)
 
-    [ -d $config/tree ] && {
+    if [ -d $config/tree ]; then
 	nef_log "Merging: $confpath/$config/tree/*"
-	local_cp -sr $confpath/$config/tree/* $confpath/compiled/
-    } || {
+	local_cp -sr $confpath/$config/tree/* $confpath/compiled/ \
+            2>&1 | grep -v "cannot create symbolic link" >&2
+    else
 	nef_log "Ignoring tree-less conf: $config"
-    }
+    fi
     for dep in `cat $config/deps`; do
 	compile_conf_rec $dep
     done
@@ -199,8 +200,8 @@ install_compiled()
 
 load_environment()
 {
-        sysconf_loaded_confs=()
-        load_environment_for_conf_rec actual
+    sysconf_loaded_confs=()
+    load_environment_for_conf_rec actual
 }
 load_environment_for_conf_rec()
 {
