@@ -617,11 +617,12 @@ target_load() {
     while true; do
         local param=$(echo "$next" | sed 's/#.*//')
         local name=$(echo "$param" | sed 's/:.*//')
+        [ -z "$name" ] && break;
+
         local value=$(echo "$param" | sed -r 's/^[^:]+:?//')
         nef_log -v "current_target_options[$name]=${value:-1}"
         current_target_options[$name]=${value:-1}
         next=$(echo $next | sed -r 's/^[^#]+#?//')
-        [ -z "$next" ] && break;
     done
 
     driver_target_state=unknown
@@ -773,16 +774,20 @@ driver_ssh_exec() {
     # So we need to pass a shell command lines (wrapping args with quotes).
 
     local _argv=()
+    local _stop_options=no
     # local _sh_c=""
 
     while [ -n "$1" ]; do
         case "$1" in
             --hybrid) shift ;;
-            # -c) _sh_c="$_sh_c '$2'"; shift 2 ;;
-            -c) _argv=("${_argv[@]}" "$2"); shift 2 ;;
-            # --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
-            --) shift ;;
-            # *) _sh_c="$_sh_c '$1'"; shift ;;
+            -c)
+                if [ $_stop_options = yes ]; then
+                    _argv=("${_argv[@]}" "'$1'")
+                else
+                    _argv=("${_argv[@]}" sh -c "'$2'")
+                fi
+                shift 2 ;;
+            --) _stop_options=yes; shift ;;
             *) _argv=("${_argv[@]}" "'$1'"); shift ;;
         esac
     done
