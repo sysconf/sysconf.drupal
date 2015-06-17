@@ -179,7 +179,7 @@ compile_conf_rec()
 
     if [ -d $config/tree ]; then
 	nef_log "Merging tree: $confpath/$config/tree/"
-	local_cp -sr $confpath/$config/tree/* $confpath/compiled/ \
+	local_cp -srn $confpath/$config/tree/* $confpath/compiled/ \
             2>&1 | grep -v "cannot create symbolic link" >&2
         # else
 	# nef_log "Ignoring tree-less conf: $config"
