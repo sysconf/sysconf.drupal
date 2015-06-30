@@ -512,8 +512,26 @@ script_server_command() {
         if [ -z "$_target" ]; then
             (nef_fatal_usage_command "$_command"  \
                 "Please specify the gitted target, as current branch has no upstream: $(git symbolic-ref -q HEAD)")
-            echo >&2
-            error_on_missing_default_upstream ted "run 'gitted $_command'" "on" >&2
+            # echo >&2
+
+            (error_on_missing_default_upstream ted "run 'gitted $_command'" "on" >&2)
+
+            # echo gggg >&2
+	    branch_name=$(git symbolic-ref -q HEAD)
+	    # If there's only one remote, use that in the suggestion
+	    remote="<remote>"
+	    if test $(git remote | wc -l) = 1
+	    then
+		remote=$(git remote)
+	    fi
+
+            echo "
+
+In most case the local and remote branches are named the same,
+so you probably want to do:
+
+    git branch --set-upstream-to=$remote/${branch_name#refs/heads/} ${branch_name#refs/heads/}" >&2
+            exit 1
         fi
         _target="${_target#gitted:}"
         nef_log "using target: $_target"
