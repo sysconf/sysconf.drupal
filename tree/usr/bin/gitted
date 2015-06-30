@@ -484,7 +484,7 @@ script_command_reset() {
             if [ $_ok = yes ]; then
                 local _state=
                 if [ $_state_only = yes ]; then
-                    _state="STATE ONLY "
+                    _state="STATE "
                 elif [ $_commit != $GITTED_CONFIG_STATE_COMMIT ]; then
                     git update-ref ${GITTED_REF_PREFIX}$_state_branch "$_commit"
                 fi
