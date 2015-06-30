@@ -324,7 +324,9 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
         _git_config_cmd "url.ext::${_dir_spec}/gitted-target %S .insteadOf" "${_url_scheme}:"
     fi
 
-    [ -n "$_target" ] && script_add_target_remote "$_target"
+    if [ -n "$_target" ]; then
+        script_add_target_remote "$_target"
+    fi
 }
 
 # command: git-upload-pack <target>
