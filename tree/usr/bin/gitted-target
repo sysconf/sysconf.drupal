@@ -170,17 +170,14 @@ script_command_init() {
     "$sysconf_target_script" init $_target "${_target_init_opts[@]}" \
         || _fail "sysconf-target init $_target"
 
-        local _name=$(echo $_target | cut -d: -f2)
-        nef_log "Adding and fetching git remote: $_name -> gitted:$_target"
-        git config remote.gitted.url >/dev/null \
-            || git remote add $_name gitted:$_target
-        [ $? -eq 0 ] || nef_log "WARNING: failed to add git remote '$_name': gitted:$_target"
-        git fetch $_name
+        script_add_target_remote "$_target"
 }
 
-# command: register [what] [git-config-scope]
+# command: register [what] [git-config-scope] [<target>]
 #
 # Copy gitted-target to a stable location and configure Git for easy use
+#
+# Optionally, add <target> as a Git remote.
 #
 # To ensure gitted-target availability within the scope specified by
 # [git-config-scope], the script is copied to the appropriate location,
@@ -258,7 +255,8 @@ script_command_register() {
         esac
     done
 
-    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command register "too many arguments"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command register "too many arguments"
+    local _target="${_argv[0]}"
 
     # Copy the script
     if [ $_no_copy = yes ]; then
@@ -324,6 +322,10 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
             local _dir_spec=$(git rev-parse --git-dir)
         fi
         _git_config_cmd "url.ext::${_dir_spec}/gitted-target %S .insteadOf" "${_url_scheme}:"
+    fi
+
+    if [ -n "$_target" ]; then
+        script_add_target_remote "$_target"
     fi
 }
 
@@ -467,6 +469,17 @@ script_is_target_id() {
     [[ "$1" =~ : ]]
 }
 
+# Register target as a Git remote and make a git-fetch(1) on it
+script_add_target_remote() {
+    local _target="$1"
+    local _name=$(echo $_target | cut -d: -f2)
+    nef_log "Adding and fetching git remote: $_name -> gitted:$_target"
+    git config "remote.${_name}.url" >/dev/null \
+        || git remote add "$_name" "gitted:$_target"
+    [ $? -eq 0 ] || nef_log "WARNING: failed to add git remote '$_name': gitted:$_target"
+    git fetch "$_name"
+}
+
 script_target_exec() {
     local _target="$1"
     shift
@@ -501,8 +514,26 @@ script_server_command() {
         if [ -z "$_target" ]; then
             (nef_fatal_usage_command "$_command"  \
                 "Please specify the gitted target, as current branch has no upstream: $(git symbolic-ref -q HEAD)")
-            echo >&2
-            error_on_missing_default_upstream ted "run 'gitted $_command'" "on" >&2
+            # echo >&2
+
+            (error_on_missing_default_upstream ted "run 'gitted $_command'" "on" >&2)
+
+            # echo gggg >&2
+	    branch_name=$(git symbolic-ref -q HEAD)
+	    # If there's only one remote, use that in the suggestion
+	    remote="<remote>"
+	    if test $(git remote | wc -l) = 1
+	    then
+		remote=$(git remote)
+	    fi
+
+            echo "
+
+In most case the local and remote branches are named the same,
+so you probably want to do:
+
+    git branch --set-upstream-to=$remote/${branch_name#refs/heads/} ${branch_name#refs/heads/}" >&2
+            exit 1
         fi
         _target="${_target#gitted:}"
         nef_log "using target: $_target"
