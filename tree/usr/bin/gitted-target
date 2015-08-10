@@ -466,7 +466,9 @@ EOF
 # FUNCTIONALITY
 
 script_is_target_id() {
-    [[ "$1" =~ : ]]
+    # TODO: work with Git remote name (expand remote name to target name)
+    [[ "$1" =~ : ]] #&& return 0
+    # git remote | grep -q "^$1$"
 }
 
 # Register target as a Git remote and make a git-fetch(1) on it
