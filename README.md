@@ -1,5 +1,10 @@
 # /sysconf repository of metagitted host for the ROCHE project
 
+## Services
+
+* etherpad
+* owncloud
+* git
 
 ## Git subtrees
 
