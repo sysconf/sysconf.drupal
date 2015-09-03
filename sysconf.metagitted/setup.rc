@@ -1,0 +1,11 @@
+# Installer script for sysconf "sysconf.gitted"  -*- shell-script -*-
+
+. /usr/lib/sysconf.base/common.sh
+
+sysconf_require_packages lxc
+
+# Reload dnsmasq in case /etc/lxc/dnsmasq.hosts has changed
+killall -HUP dnsmasq
+
+# Refresh ip forwardings
+/usr/share/metagitted/refresh-guest-status
