@@ -177,13 +177,13 @@ compile_conf_rec()
     done
     sysconf_compiled_confs=(${sysconf_compiled_confs[@]} $config)
 
-    [ -d $config/tree ] && {
+    if [ -d $config/tree ]; then
 	nef_log "Merging tree: $confpath/$config/tree/"
-	local_cp -sr $confpath/$config/tree/* $confpath/compiled/
-    }
-    # || {
-    # nef_log -v "Ignoring tree-less conf: $config"
-    # }
+	local_cp -srn $confpath/$config/tree/* $confpath/compiled/ \
+            2>&1 | grep -v "cannot create symbolic link" >&2
+        # else
+	# nef_log "Ignoring tree-less conf: $config"
+    fi
     for dep in `cat $config/deps`; do
 	compile_conf_rec $dep
     done
@@ -277,7 +277,12 @@ update_system_from_conf_rec()
 add_file()
 {
     local config="$1"
-    local file="$2"
+    local file=
+    if which realpath 2>/dev/null; then
+        file=$(realpath --no-symlinks "$2")
+    else
+        file="$(cd "$(dirname "$2")"; pwd)/$(basename "$2")"
+    fi
     local target="$confpath/$config/tree$file"
 
     [ -f "$file" ] || nef_fatal "warning: arg is not a regular file: $file"
