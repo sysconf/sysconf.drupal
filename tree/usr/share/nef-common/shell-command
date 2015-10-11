@@ -42,6 +42,7 @@ nef_command_init_options()
 nef_log() {
     [ "x$NEF_LOG_FILE" = x ] && NEF_LOG_FILE="$LOG_FILE" # Legacy compat
 
+    local _echo=yes
     declare _opt_verbose=no
     declare _opt_debug=no
     declare _opt_prepend=""
@@ -60,8 +61,8 @@ nef_log() {
 
     done
 
-    [ $_opt_verbose = yes -a x$nef_opt_show_verbose = xno ] && return 0
     [ $_opt_debug = yes -a x$nef_opt_show_debug = xno ] && return 0
+    [ $_opt_verbose = yes -a x$nef_opt_show_verbose = xno ] && _echo=no
 
     local txt="$*"
     local line="$*"
@@ -70,17 +71,17 @@ nef_log() {
     [ -n "$prefix" -a "$NEF_LOG_PREFIX_NOCOLUMN" != yes ] && prefix="${prefix}: "
     # prefix=$(basename $0)
 
-    if [ "x$NEF_LOG_DATE" = xyes ]; then
-        date="`date +'%Y-%m-%d %H:%M:%S:%N' | sed -E 's/.{6}$//'`"
-        prefix="$prefix $date"
+
+    if [ $_echo = yes ]; then
+        echo "${prefix}${_opt_prepend}${line}" >&2
     fi
 
-    line="${prefix}${_opt_prepend}${line}"
-
-    if [ "$NEF_LOG_FILE" = "" ]; then
-        echo "$line" >&2
-    else
-        echo "$line" | tee -a $LOG_FILE >&2
+    if [ "$NEF_LOG_FILE" != "" ]; then
+        if [ "x$NEF_LOG_DATE" = xyes ]; then
+            date="`date +'%Y-%m-%d %H:%M:%S.%N' | sed -E 's/.{6}$//'`"
+            prefix="$date $prefix"
+        fi
+        echo "${prefix}${_opt_prepend}${line}" >>"$NEF_LOG_FILE"
     fi
 }
 
