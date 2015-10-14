@@ -1,0 +1,384 @@
+#!/bin/bash
+#
+# nef-log-poller - Poll text files and print written lines to OSD notifications
+#
+# ## BEGIN EXAMPLE FOR: /etc/default/nef-log-poller
+# # Preferences for /usr/bin/nef-log-poller               -*- shell-script -*-
+
+# NEF_LOGPOLLER_FILES=(
+#     /tmp/osd.log
+#     /var/log/alternatives.log
+#     /var/log/auth.log
+#     /var/log/dpkg.log
+#     /var/log/kern.log
+#     /var/log/cups/page_log
+#     /var/log/nef-dup/**.log
+#     /var/log/nef-admin-lenoka.log
+# )
+# ## END OF FILE
+#
+# ## BEGIN EXAMPLE FOR: /etc/nef-log-poller/source-highlight.outlang
+# extension "awesome"
+#
+# color "<span color=\"$style\">$text</span>"
+#
+# ## Bright background:
+# colormap
+# "green" "#88FF55"
+# "red" "#FF8888"
+# "darkred" "#FFCCCC"
+# "blue" "#CCCCFF"
+# "brown" "#C08050"
+# "pink" "#FF77FF"
+# "yellow" "#FFFF00"
+# "cyan" "#66FFFF"
+# "purple" "#CC77CC"
+# "orange" "#FFAA00"
+# "brightorange" "#FF9900"
+# "brightgreen" "#33FF33"
+# "darkgreen" "#338833"
+# "black" "#C0C0C0"
+# "teal" "#00A0A0"
+# "gray" "#A0A0A0"
+# "darkblue" "#AAAAFF"
+# default "#FFFFFF"
+# end
+#
+# ## END OF FILE
+#
+##
+
+nef_command_name=nef-log-poller
+nef_command_prefix=script_command
+
+script_dir=$(dirname $(readlink -f $0))
+PATH=$script_dir:$script_dir/../share/nef-common:$script_dir/../../../../sysconf.base/tree/usr/share/nef-common:/usr/share/nef-common . shell-command || exit 2
+
+
+######################################################################
+# DEFAULTS AND FUNCTIONS
+
+nef_log_poller_on_unmatched() {
+    nef_logpoller_notify_osd "$1"
+}
+
+nef_logpoller_notify_osd() {
+    _entry=$(echo "$1" | "${_highlight_cmd[@]}")
+
+    if [ -n "$_entry" ]; then
+
+        [[ "$_entry" =~ info ]] && messageType=info
+        [[ "$_entry" =~ warn ]] && messageType=warning
+        [[ "$_entry" =~ err ]] && messageType=error
+        [[ "$_entry" =~ auth ]] && messageType=security
+        [[ "$_entry" =~ access ]] && messageType=security
+        [[ "$_entry" =~ UFW\ BLOCK\ INPUT ]] && messageType=security
+
+        [ -z "$messageType" ] && messageType=info
+
+        case $messageType in
+            info)
+                urgency=$infoUrgency
+                icon=$infoIcon
+                popupTime=$infoPopupTime
+                ;;
+            warning)
+                urgency=$warningUrgency
+                icon=$warningIcon
+                popupTime=$warningPopupTime
+                ;;
+            error)
+                urgency=$errorUrgency
+                icon=$errorIcon
+                popupTime=$errorPopupTime
+                ;;
+            security)
+                urgency=$securityUrgency
+                icon=$securityIcon
+                popupTime=$securityPopupTime
+                ;;
+            *)
+                urgency=$errorUrgency
+                icon=$errorIcon
+                popupTime=$errorPopupTime
+                ;;
+        esac
+
+        # nef_log -v "Sending notif for entry: $_entry"
+        notify-send -u $urgency -t $popupTime -i "$icon" "$_current_log" "$_entry"
+    fi
+}
+
+
+################################################################################
+## Startup
+
+
+
+# on_sighup_in_loop() {
+#     nef_log "SIGHUP Received. Exiting loop..."
+#     nef_log "Killing: $BASHPID"
+#     # kill -KILL $BASHPID
+#     exit 4
+# }
+
+# command: run
+##
+script_command_run() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help list; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+
+    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command run "too many arguments"
+
+    trap script_on_sighup SIGHUP
+
+    while true; do
+
+        # . $SCRIPT_CONFIG_FILE
+
+        for _file in "${NEF_LOGPOLLER_FILES[@]}"; do
+            if [[ "$_file" =~ .fifo$ ]]; then
+                if [ ! -p "$_file" ]; then
+                    mkdir -p $(dirname "$_file")
+                    mkfifo -m 0600 "$_file" || nef_log "Warning: mkfifo failed with status $? at creating: $_file"
+                fi
+            fi
+        done
+
+        nef_log "Running as PID: $$"
+        nef_log "Please send SIGHUP to reload configuration."
+
+        coproc tail -F -n 0 "${NEF_LOGPOLLER_FILES[@]}"
+        nef_log -v "Spawned tail(1) process as PID $COPROC_PID ; stdin=<${COPROC[0]}> stdout=<${COPROC[1]}>"
+
+        local _current_log=
+
+        while read -u "${COPROC[0]}" _line; do
+            # nef_log "PID: $$ / $BASHPID"
+            nef_log -d "Read line on $_current_log: $_line"
+
+            [ -z "$_line" ] && continue
+
+            if [[ "$_line" =~ ^==\>\  ]]; then
+                _current_log="${_line#==> }"
+                _current_log="${_current_log% <==}"
+                nef_log -d "New current log: $_current_log"
+                _current_log="$_current_log"
+
+            else
+                _func="nef_log_poller_on_$_current_log"
+                if ! declare -f "$_func" >/dev/null; then
+                    _func=nef_log_poller_on_unmatched
+                fi
+                "$_func" "$_line"
+            fi
+        done
+        wait
+        nef_log -v "tail(1) process has terminated. Reload configuration..."
+    done
+}
+
+# command: reload
+##
+script_command_reload() {
+    local _pids=$(pidof -x -o $$ $0)
+    nef_log "Sending SIGHUP to: $_pids"
+    kill -HUP $_pids
+    nef_log "Done."
+}
+
+# command: status
+##
+script_command_status() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h) script_command_help help; return ;;
+            --) shift; _command="$1"; break ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _command="$1"; break ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command status "too many arguments"
+
+    local _pids=$(pidof -x -o $$ $0)
+
+    if [ -n "$_pids" ]; then
+        nef_log "$nef_command_name is running (PID $_pids)"
+
+        if [ "$nef_opt_show_verbose" = yes ]; then
+            nef_log "Polled files:"
+            for _file in "${NEF_LOGPOLLER_FILES[@]}"; do
+                nef_log "  $_file"
+            done
+        fi
+    else
+        nef_log "$nef_command_name is not running."
+    fi
+}
+
+
+# command: help [command]
+#
+# Print information about command usage.
+#
+# With no argument, a list of commands is printed.
+##
+script_command_help() {
+    local _options=
+    local _argv=()
+    local _command=
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            --usage) _options="$_options --usage" shift ;;
+            -h) script_command_help help; return ;;
+            --) shift; _command="$1"; break ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _command="$1"; break ;;
+        esac
+    done
+
+    nef_show_help $_options $_command
+}
+
+
+######################################################################
+# INTERNAL FUNCTIONALITY
+
+script_on_sighup() {
+    nef_log "SIGHUP Received. Reloading configuration..."
+    nef_log -v "Sending SIGTERM to tail(1) process, PID: $COPROC_PID"
+    script_load_configuration
+    kill $COPROC_PID
+}
+
+script_load_configuration() {
+    nef_command_init_options
+    nef_command_merge_env
+
+    export DISPLAY=":0.0"
+    export NEF_LOGPOLLER_SOURCE_HIGHLIGHT_DEF="/etc/nef-log-poller/source-highlight.outlang" # CHANGE ME
+
+    #Urgency
+    infoUrgency='low'
+    warningUrgency='normal'
+    errorUrgency='critical'
+    securityUrgency='critical'
+
+    #Popup time
+    infoPopupTime=10000
+    warningPopupTime=20000
+    errorPopupTime=30000
+    securityPopupTime=30000
+
+    #Icons
+    infoIcon='/usr/share/icons/gnome/32x32/status/dialog-information.png'
+    warningIcon='/usr/share/icons/gnome/32x32/status/dialog-warning.png'
+    errorIcon='/usr/share/icons/gnome/32x32/status/dialog-error.png'
+    securityIcon='/usr/share/icons/gnome/32x32/status/security-medium.png'
+
+    NEF_LOGPOLLER_ENABLE_SOURCE_HIGHLIGHT=yes
+
+    if [ $(id -u) -eq 0 ]; then
+        NEF_LOG_FILE=/var/log/$nef_command_name.log
+        # else
+        #     NEF_LOG_FILE=/tmp/$nef_command_name.log
+    fi
+    SCRIPT_CONFIG_FILE=/etc/default/$nef_command_name
+
+    [ -f $SCRIPT_CONFIG_FILE ] && . $SCRIPT_CONFIG_FILE
+
+    _highlight_cmd=( cat )
+
+    if [ $NEF_LOGPOLLER_ENABLE_SOURCE_HIGHLIGHT = yes ]; then
+        _highlight_cmd=( source-highlight \
+            --failsafe \
+            --src-lang=log \
+            --style-file=default.style \
+            --outlang-def=${NEF_LOGPOLLER_SOURCE_HIGHLIGHT_DEF}
+        )
+    fi
+
+    [ "${#NEF_LOGPOLLER_FILES[@]}" -eq 0 ] \
+        && nef_fatal "At least one file must be defined in array variable: NEF_LOGPOLLER_FILES"
+}
+
+
+######################################################################
+# COMMAND LINE & RUN
+
+# common options:
+#   -v, --verbose               Enable verbose logging on stderr
+#   -vv, --debug-verbose        Enable debug-level verbosity (implies -v)
+#   -h, --help                  Show help for main usage or specific command
+##
+script_eval_common_option() {
+    case "$1" in
+        -v | --verbose) nef_opt_show_verbose=yes; shift ;;
+        -vv | --debug-verbose) nef_opt_show_verbose=yes; nef_opt_show_debug=yes; shift ;;
+        -h | --help) nef_show_usage; exit 0 ;;
+        -*) nef_fatal "bad option: $1, use -h for usage information" ;;
+    esac
+}
+
+nef_fatal_usage_command() {
+    local _command="$1"; shift
+
+    nef_log "$_command usage error (try: $_command -h): $*"
+    # echo >&2
+    # script_command_help --usage "$_command" >&2
+    exit 1
+}
+
+script_parse_cmdline() {
+    script_load_configuration
+
+    script_command_argv=()
+
+    while [ -n "$1" ]; do
+
+        case "$1" in
+            -*) script_eval_common_option "$1"; shift ;;
+            *) script_command_argv=("$@"); break ;;
+        esac
+
+    done
+
+    [ -z "${script_command_argv[0]}" ] && script_command_argv=(help)
+
+
+    # Run command
+    script_command_name="${script_command_argv[0]}"
+    unset script_command_argv[0]
+    script_command_function_name="${nef_command_prefix}_${script_command_name}"
+    declare -f $script_command_function_name >/dev/null \
+        || nef_fatal_usage "invalid command: $script_command_name"
+    $script_command_function_name "${script_command_argv[@]}"
+    local _status=$?
+    if [ $_status -eq 0  ]; then
+        nef_log -v "Command returned successfully."
+    else
+        if [ "$script_return_status" != yes ]; then
+            nef_fatal "command ${script_command_name} failed with status $_status"
+        else
+            nef_log -v "command ${script_command_name} returned status $_status"
+        fi
+    fi
+    return $_status
+}
+
+
+######################################################################
+
+script_parse_cmdline "$@"
