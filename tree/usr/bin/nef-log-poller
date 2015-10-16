@@ -1,10 +1,11 @@
 #!/bin/bash
 #
 # nef-log-poller - Poll text files and print written lines to OSD notifications
+##
 #
 # ## BEGIN EXAMPLE FOR: /etc/default/nef-log-poller
 # # Preferences for /usr/bin/nef-log-poller               -*- shell-script -*-
-
+#
 # NEF_LOGPOLLER_FILES=(
 #     /tmp/osd.log
 #     /var/log/alternatives.log
@@ -63,52 +64,70 @@ nef_log_poller_on_unmatched() {
 }
 
 nef_logpoller_notify_osd() {
-    _entry=$(echo "$1" | "${_highlight_cmd[@]}")
+    local _type=$NEF_MESSAGE_TYPE
+    local _raw=no
 
-    if [ -n "$_entry" ]; then
-
-        [[ "$_entry" =~ info ]] && messageType=info
-        [[ "$_entry" =~ warn ]] && messageType=warning
-        [[ "$_entry" =~ err ]] && messageType=error
-        [[ "$_entry" =~ auth ]] && messageType=security
-        [[ "$_entry" =~ access ]] && messageType=security
-        [[ "$_entry" =~ UFW\ BLOCK\ INPUT ]] && messageType=security
-
-        [ -z "$messageType" ] && messageType=info
-
-        case $messageType in
-            info)
-                urgency=$infoUrgency
-                icon=$infoIcon
-                popupTime=$infoPopupTime
-                ;;
-            warning)
-                urgency=$warningUrgency
-                icon=$warningIcon
-                popupTime=$warningPopupTime
-                ;;
-            error)
-                urgency=$errorUrgency
-                icon=$errorIcon
-                popupTime=$errorPopupTime
-                ;;
-            security)
-                urgency=$securityUrgency
-                icon=$securityIcon
-                popupTime=$securityPopupTime
-                ;;
-            *)
-                urgency=$errorUrgency
-                icon=$errorIcon
-                popupTime=$errorPopupTime
-                ;;
+    while [ -n "$1" ]; do
+        case "$1" in
+            --raw) _raw=yes; shift ;;
+            --type) _type=$2; shift 2 ;;
+            --) shift; break ;;
+            *) break ;;
         esac
+    done
 
-        # nef_log -v "Sending notif for entry: $_entry"
-        notify-send -u $urgency -t $popupTime -i "$icon" "$_current_log" "$_entry"
+    case $_type in
+        info)
+            urgency=$infoUrgency
+            icon=$infoIcon
+            popupTime=$infoPopupTime
+            ;;
+        warning)
+            urgency=$warningUrgency
+            icon=$warningIcon
+            popupTime=$warningPopupTime
+            ;;
+        error)
+            urgency=$errorUrgency
+            icon=$errorIcon
+            popupTime=$errorPopupTime
+            ;;
+        security)
+            urgency=$securityUrgency
+            icon=$securityIcon
+            popupTime=$securityPopupTime
+            ;;
+        *)
+            urgency=$errorUrgency
+            icon=$errorIcon
+            popupTime=$errorPopupTime
+            ;;
+    esac
+
+    if [ $_raw = yes ]; then
+        local _txt="$1"
+    else
+        local _txt=$(echo "$1" | "${_highlight_cmd[@]}")
     fi
+
+    # nef_log -v "Sending notif for entry: $_txt"
+    echo notify-send -u $urgency -t $popupTime -i "$icon" "$_current_log" "$_txt"
+    notify-send -u $urgency -t $popupTime -i "$icon" "$_current_log" "$_txt"
 }
 
+script_prepare_variables() {
+    NEF_MESSAGE_TYPE=info
+
+    [[ "$_entry" =~ info ]] && NEF_MESSAGE_TYPE=info
+    [[ "$_entry" =~ warn ]] && NEF_MESSAGE_TYPE=warning
+    [[ "$_entry" =~ err ]] && NEF_MESSAGE_TYPE=error
+    [[ "$_entry" =~ auth ]] && NEF_MESSAGE_TYPE=security
+    [[ "$_entry" =~ access ]] && NEF_MESSAGE_TYPE=security
+
+    [[ "$_entry" =~ UFW\ BLOCK\ INPUT ]] && NEF_MESSAGE_TYPE=security
+
+
+}
 
 ################################################################################
 ## Startup
@@ -174,6 +193,7 @@ script_command_run() {
                 _current_log="$_current_log"
 
             else
+                script_prepare_variables
                 _func="nef_log_poller_on_$_current_log"
                 if ! declare -f "$_func" >/dev/null; then
                     _func=nef_log_poller_on_unmatched
@@ -277,10 +297,10 @@ script_load_configuration() {
     securityUrgency='critical'
 
     #Popup time
-    infoPopupTime=10000
-    warningPopupTime=20000
-    errorPopupTime=30000
-    securityPopupTime=30000
+    infoPopupTime=5000
+    warningPopupTime=10000
+    errorPopupTime=20000
+    securityPopupTime=20000
 
     #Icons
     infoIcon='/usr/share/icons/gnome/32x32/status/dialog-information.png'
