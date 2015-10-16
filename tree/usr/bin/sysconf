@@ -308,7 +308,9 @@ run_cmd()
     shift
     chdir_confpath
     cd $config
-    nef_log "*** In conf dir '$PWD' running: $command $@"
+    echo >&2
+    nef_log "********************************************************************************"
+    nef_log "*** RUNNING: $command $@ *** IN DIRECTORY: $PWD"
     "$command" "$@"
 
     for dep in `cat deps`; do

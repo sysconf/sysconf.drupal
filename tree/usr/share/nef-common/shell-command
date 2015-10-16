@@ -224,7 +224,7 @@ nef_command_merge_env() {
     local _path=/etc/default/$nef_command_name
 
     if [ -f $_path ]; then
-        nef_log -v "loading defaults from $_path"
+        nef_log -v "Loading defaults from $_path"
         . $_path
     fi
 }
