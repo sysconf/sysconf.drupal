@@ -314,6 +314,9 @@ run_cmd()
     "$command" "$@"
 
     for dep in `cat deps`; do
+        [[ "$_processed" =~ $dep ]] && continue
+        _processed="$_processed $dep"
+
 	run_cmd "$dep" "$command" "$@"
     done
 }
