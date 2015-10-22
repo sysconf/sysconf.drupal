@@ -112,7 +112,7 @@ script_command_list() {
     script_list_profiles "${_argv[@]}"
 }
 
-# command: backup <name>
+# command: backup <profile-name-pattern1>  ...
 #
 # Options can be given at any position:
 #
@@ -159,6 +159,58 @@ script_command_backup() {
         script_after_operation
 
     done
+}
+
+# command: restore <unique-profile-name> <local-directory>
+#
+# Options can be given at any position:
+#
+#   -d, --dry
+#               Do a dry-run. Useful with -v to dump the duplicity command line
+##
+script_command_restore() {
+    local _dry=no
+    local _dup_options=()
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -d|--dry) _dry=yes; shift ;;
+            -h|--help) script_command_help restore; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 2 ] && nef_fatal_usage_command restore "too few arguments"
+    [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command restore "too many arguments"
+
+    local _local_dir="${_argv[1]}"
+    local _profiles=( $(script_expand_profiles "${_argv[0]}") )
+    [ "${#_profiles[@]}" -gt 1 ] \
+        && nef_fatal_usage_command restore "profile pattern must expand to a single profile (try with 'list'): ${_argv[0]}"
+
+    local _profile="${_profiles[0]}"
+
+    script_load_profile "$_profile"
+    nef_log "Restoring backup from URL: $NEFDUP_TARGET_URL"
+    nef_log "   ... to local directory: $_local_dir"
+
+    [ $NEFDUP_SHOW_PROGRESS = yes ] && _dup_options=("${_dup_options[@]}" --progress)
+    [ $NEFDUP_ENABLE_ENCRYPTION = yes ] || _dup_options=("${_dup_options[@]}" --no-encryption)
+
+    _dup_args=("${_dup_options[@]}" --verbosity "$NEFDUP_DUPLICITY_VERBOSITY" "$NEFDUP_TARGET_URL" "$_local_dir")
+
+    script_before_operation
+
+    if [ $_dry = no ]; then
+        nef_log -v "Running: duplicity ${_dup_args[@]}"
+        duplicity "${_dup_args[@]}" | sed -u 's/^/duplicity: /' | tee -a $NEFDUP_LOG_FILE
+    else
+        nef_log -v "Dry-running: duplicity ${_dup_args[@]}"
+    fi
+
+    script_after_operation
 }
 
 # command: help [command]
