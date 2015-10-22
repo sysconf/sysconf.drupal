@@ -285,7 +285,7 @@ add_file()
     fi
     local target="$confpath/$config/tree$file"
 
-    [ -f "$file" ] || nef_fatal "warning: arg is not a regular file: $file"
+    [ -f "$file" -o -h "$file" ] || nef_fatal "warning: arg is not a regular file: $file"
     [ -r "$target" ] && nef_fatal "warning: repository path already exists: $target"
 
     dir=$(dirname "$target")
@@ -346,7 +346,10 @@ sysconf_require_packages()
     if [ -n "$_packages" ]; then
         export DEBIAN_FRONTEND=noninteractive
         # sysconf_apt-get install --yes --no-upgrade $_packages
-        sysconf_apt-get install --yes --force-yes -o Dpkg::Options::=--force-confdef --no-upgrade $_packages
+        sysconf_apt-get install \
+                        --yes --force-yes -o Dpkg::Options::=--force-confdef \
+                        --no-upgrade --no-install-recommends \
+                        $_packages
     fi
 }
 sysconf_fix_directory()
