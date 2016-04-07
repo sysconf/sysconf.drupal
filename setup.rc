@@ -2,6 +2,7 @@
 
 _packages=""
 _packages="$_packages openssh-server nano"
+_packages="$_packages rsyslog"
 _packages="$_packages collectd"
 
 sysconf_require_packages "$_packages"
