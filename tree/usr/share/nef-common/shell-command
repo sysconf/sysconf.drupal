@@ -73,8 +73,8 @@ nef_log() {
 
 
     if [ $_echo = yes ]; then
-        echo "${prefix}${_opt_prepend}${line}" >&2
-        logger -i -t "${prefix}" "${_opt_prepend}${line}"
+        # echo "${prefix}${_opt_prepend}${line}" >&2
+        logger --stderr -i -t "${prefix}" "${_opt_prepend}${line}"
     fi
 
     if [ "$NEF_LOG_FILE" != "" ]; then
