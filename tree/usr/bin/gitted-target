@@ -170,7 +170,7 @@ script_command_init() {
     "$sysconf_target_script" init $_target "${_target_init_opts[@]}" \
         || _fail "sysconf-target init $_target"
 
-        script_add_target_remote "$_target"
+    script_add_target_remote "$_target"
 }
 
 # command: register [what] [git-config-scope] [<target>]
@@ -265,7 +265,7 @@ script_command_register() {
     elif [ -z "$_script_dir" ]; then
         case $_config in
             local) _script_dir=$(git rev-parse --git-dir)
-                [ -d $_script_dir ] || nef_fatal "not in a Git repository
+                   [ -d $_script_dir ] || nef_fatal "not in a Git repository
 
 HINT: change to a Git directory or use --system, --global, --file or --no-copy" ;;
 
@@ -327,6 +327,71 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
     if [ -n "$_target" ]; then
         script_add_target_remote "$_target"
     fi
+}
+
+# command: sync <remote>
+#
+# Synchronise all
+#
+# - gitted commit <target> '**'         (<target> is got from 'git config --get remote.<remote>.url')
+# - git fetch <remote>
+# - foreach <branch> in <fetched branches>:
+#     - git checkout <branch>
+#     - git merge <remote>/<branch>
+#     - git nef-subtree split <branch>
+#
+# - git nef-subtree fetch
+# - git nef-subtree merge
+# - git push <remote> <fetched branches>
+#
+# TODO usage: sync [<branch> ...]
+#
+# Options:
+#
+#   --no-fetch          Disable gitted-commit and fetching from target
+#
+script_command_sync() {
+    local _no_fetch=no
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            --no-fetch) _no_fetch=yes; shift ;;
+            -h|--help) script_command_help sync; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command sync "too few arguments"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command sync "too many arguments"
+
+
+    local _remote="${_argv[0]}"
+    local _target=$(script_git_remote_to_gitted_target "$_remote")
+    nef_log "Working on remote \"$_remote\", target \"$_target\""
+    [ -n "$_target" ] || nef_fatal "remote \"$_remote\" is missing or is not a gitted remote"
+
+    if [ no = $_no_fetch ]; then
+        (script_command_commit "$_target" '**') \
+            || nef_fatal "gitted-commit failed with status $?"
+        nef_log "Fetching all branches from remote: $_remote"
+        git fetch -v "$_remote" \
+            || nef_fatal "git-fetch failed with status $?"
+    fi
+    local remote_prefix=refs/remotes/$_remote
+    local branches=$(git show-ref \
+                      | grep " $remote_prefix/" \
+                      | sed -r "s,[0-9a-z]+ $remote_prefix/(.*)$,\1,")
+
+    nef_log -v "Branches: $branches"
+    for branch in $branches; do
+        nef_log "** branch: $branch"
+        git checkout --quiet $branch
+        git merge $remote_prefix/$branch \
+            || nef_fatal "merge conflict :("
+        git nef-subtree split $branch
+    done
 }
 
 # command: git-upload-pack <target>
@@ -471,6 +536,10 @@ script_is_target_id() {
     # git remote | grep -q "^$1$"
 }
 
+script_git_remote_to_gitted_target() {
+    git config --get "remote.$1.url" \
+        | sed -r 's,ext::[^ ]+/gitted-target +%S +,,'
+}
 # Register target as a Git remote and make a git-fetch(1) on it
 script_add_target_remote() {
     local _target="$1"
@@ -515,7 +584,7 @@ script_server_command() {
         _target=$(git config remote.${_remote}.url)
         if [ -z "$_target" ]; then
             (nef_fatal_usage_command "$_command"  \
-                "Please specify the gitted target, as current branch has no upstream: $(git symbolic-ref -q HEAD)")
+                                     "Please specify the gitted target, as current branch has no upstream: $(git symbolic-ref -q HEAD)")
             # echo >&2
 
             (error_on_missing_default_upstream ted "run 'gitted $_command'" "on" >&2)
