@@ -30,6 +30,7 @@ driver_url="${GITTED_CONFIG_GIT_REMOTE_URL}"
 driver_remoterefs="${GITTED_CONFIG_GIT_REMOTE_REMOTEREFS:-refs/*}"
 driver_localrefs="${GITTED_CONFIG_GIT_REMOTE_LOCALREFS:-*}"
 driver_pretty="--pretty=format:[%h] %ar, by %cn -- %s"
+driver_auto_hook="${GITTED_CONFIG_GIT_REMOTE_REMOTEREFS:-refs/*}"
 
 ################################################################################
 # Driver / shell-driver interface
@@ -435,6 +436,7 @@ gitted_driver_check_remote() {
     local _str="Remote is"
     remote_is_local=false
     remote_is_bare=true
+    remote_head=
 
     if [[ "$driver_url" =~ ^/ ]] && [ -d "$driver_url" ]; then
         remote_is_local=false

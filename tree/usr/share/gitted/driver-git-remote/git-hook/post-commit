@@ -1,0 +1,16 @@
+#!/bin/bash
+#
+# Hook executed at the end of a git commit.
+#
+# This is provided by the gitted driver-git-remote as a symbolic link
+# placed in REPO/.git/hook
+
+echo "\$0=$0 args=$@"
+
+commit=$(git rev-parse HEAD)
+if git cat-file -p $commit | grep -q "^Gitted .* auto-commit "; then
+    echo "$0: Not triggering gitted-commit, commit is an auto-commit already."
+else
+    echo Going...
+    # gitted commit
+fi
