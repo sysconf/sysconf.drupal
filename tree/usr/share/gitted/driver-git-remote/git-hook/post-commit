@@ -5,15 +5,25 @@
 # This is provided by the gitted driver-git-remote as a symbolic link
 # placed in REPO/.git/hook
 
-called_as=$(readlink -f $0)
-echo "\$0=$0 called_as=$called_as args=$@ PWD=$PWD"
+# called_as=$(readlink -f $0)
+# echo "\$0=$0 called_as=$called_as args=$@ PWD=$PWD"
 
-env | grep GIT
+driver_rewrite() {
+    local _from="${1//\//\\/}"
+    local _to="${2//\//\\/}"
+    sed -r "s/^${_from/\*/(.*)}$/${_to/\*/\\1}/"
+}
+
+
+workingdir="$PWD"
 
 commit=$(git rev-parse HEAD)
+
 if git cat-file -p $commit | grep -q "^Gitted .* auto-commit "; then
     echo "$0: Not triggering gitted-commit, commit is an auto-commit already."
 else
+    head_branch=$(git symbolic-ref HEAD)
+    # driver_rewrite
     echo Going...
-    # gitted commit
+    gitted list --only-driver git-remote | sed 's/^[^:]+://'
 fi

@@ -42,6 +42,7 @@ export GITTED_NULL_SHA1=0000000000000000000000000000000000000000
 
 NEF_LOG_NO_PREFIX=yes
 
+
 ######################################################################
 # COMMANDS: WORK STATE
 
@@ -589,6 +590,96 @@ EOF
              >$GIT_DIR/hooks/$hook
         chmod 755 $GIT_DIR/hooks/$hook
     done
+}
+
+
+# command: list
+#
+# List all driver branches
+#
+# Options can be given at any position:
+#
+#   --only-driver <driver-name>
+#               Only show branches matching driver <driver-name>.
+#               Example: --only-driver git-remote
+##
+script_command_list() {
+    local _only_driver=
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            --only-driver) _only_driver="$2"; shift 2 ;;
+            -h|--help) script_command_help list; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -gt 0 ] && nef_fatal_usage_command list "too many arguments"
+
+
+    _configs=$(find $GITTED_STATE_CONFIG_DIR/$_base -name '*.config' -printf "%P\n")
+    for _config in $_configs; do
+        # nef_log "driver domain under: ${_base}${_config%.config}"
+        _driver_branches="${_base}${_config%.config}"
+    done
+
+    for _branch in $_driver_branches; do
+        # nef_log "Expanding: $1: calling driver: $_branch"
+        (
+            script_load_state_config $_branch
+            local _status=$?
+            if [ $_status = 2 ]; then
+                nef_log -v "State is NOT ENABLED (from config), ignoring: $_branch"
+            else
+                if [ $_status -ne 0 ]; then
+                    nef_fatal --warn "could not load driver for branch, ignoring it: $_branch"
+                else
+                    if [ -z "$_only_driver" -o ${GITTED_CONFIG_STATE_DRIVER} = "$_only_driver" ]; then
+                        echo ${GITTED_CONFIG_STATE_DRIVER}:$_branch
+                    fi
+                    # env | grep ^GITTED_CONFIG_
+                fi
+            fi
+        )
+    done
+}
+
+# command: show <driver-branch>
+#
+# Show the config for a given driver branches
+#
+##
+script_command_show() {
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -h|--help) script_command_help show; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command show "too few arguments"
+    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command show "too many arguments"
+
+
+    _branch="${_argv[0]}"
+
+    script_load_state_config $_branch
+    local _status=$?
+    if [ $_status = 2 ]; then
+        nef_log -v "State is NOT ENABLED (from config), ignoring: $_branch"
+    else
+        if [ $_status -ne 0 ]; then
+            nef_fatal --warn "could not load driver for branch, ignoring it: $_branch"
+        else
+            nef_log "Environment:"
+            env | grep ^GITTED_CONFIG_
+        fi
+    fi
 }
 
 
