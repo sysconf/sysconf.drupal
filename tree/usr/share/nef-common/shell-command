@@ -163,9 +163,11 @@ nef_cmd()
 nef_fatal() {
     local _status=1
     local _prefix="FATAL ERROR: "
+
     while [ "$1" != "" ]; do
         case "$1" in
             --status) _status="$2"; shift 2 ;;
+            -ne) _status=; shift ;;
             --warn) _status=; _prefix="WARNING: "; shift ;;
             --) shift; break ;;
             -*) nef_log "nef_fatal(): bad option: $1"; shift ;;
