@@ -393,7 +393,7 @@ script_command_sync() {
         git checkout --quiet $branch
         git merge $remote_prefix/$branch \
             || nef_fatal "merge conflict :("
-        [ no = $_nosubtree ] \
+        [ no = $_no_subtree ] \
             && git nef-subtree split $branch
     done
 }
