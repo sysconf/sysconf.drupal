@@ -25,9 +25,7 @@ else
     head_branch=$(git symbolic-ref HEAD)
     # driver_rewrite
     echo Going...
-    for driver_branch in
-        $(gitted list --only-driver git-remote | sed -r 's/^[^:]+://');
-    do
+    for driver_branch in $(gitted list --only-driver git-remote | sed -r 's/^[^:]+://'); do
         (
             eval "$(gitted show $driver_branch 2>/dev/null)"
             if [ "$workingdir" = "$GITTED_CONFIG_GIT_REMOTE_URL" ]; then
