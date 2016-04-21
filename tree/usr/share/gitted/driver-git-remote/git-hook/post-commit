@@ -8,6 +8,8 @@
 called_as=$(readlink -f $0)
 echo "\$0=$0 called_as=$called_as args=$@ PWD=$PWD"
 
+env | grep GIT
+
 commit=$(git rev-parse HEAD)
 if git cat-file -p $commit | grep -q "^Gitted .* auto-commit "; then
     echo "$0: Not triggering gitted-commit, commit is an auto-commit already."
