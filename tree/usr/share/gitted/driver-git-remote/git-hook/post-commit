@@ -35,6 +35,7 @@ else
                                                   "$GITTED_CONFIG_GIT_REMOTE_LOCALREFS")
 
                     echo "Auto-comitting gitted branch: $driver_branch/$nested_branch"
+                    gitted commit $driver_branch/$nested_branch
                 else
                     echo "Auto-commit is not enabled on driver branch: $driver_branch"
                 fi
