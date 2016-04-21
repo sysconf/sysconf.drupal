@@ -29,7 +29,7 @@ else
         (
             eval "$(gitted show $driver_branch 2>/dev/null)"
             if [ "$workingdir" = "$GITTED_CONFIG_GIT_REMOTE_URL" ]; then
-                if [ true = GITTED_CONFIG_GIT_REMOTE_AUTOGITTEDCOMMIT ]; then
+                if [ true = "$GITTED_CONFIG_GIT_REMOTE_AUTOGITTEDCOMMIT" ]; then
                     echo "Affecting: $driver_branch"
                 else
                     echo "Auto-commit is not enabled on driver branch: $driver_branch"
