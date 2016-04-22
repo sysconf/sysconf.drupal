@@ -562,7 +562,8 @@ script_is_target_id() {
 
 script_git_remote_to_gitted_target() {
     git config --get "remote.$1.url" \
-        | sed -r 's,ext::[^ ]+/gitted-target +%S +,,'
+        | sed -r 's,^ext::[^ ]+/gitted-target +%S +,,' \
+        | sed -r 's,^gitted:,,'
 }
 # Register target as a Git remote and make a git-fetch(1) on it
 script_add_target_remote() {
