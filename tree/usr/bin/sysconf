@@ -587,6 +587,15 @@ while [ "$1" != "" ]; do
             fi
             ;;
 
+        environment)
+            nef_read_args "$@"
+            shift $((OPTIND-1))
+            load_environment
+	    prefix="$1"
+	    shift
+            set | grep "^$prefix"
+            ;;
+
         help)
 	    show_usage
 	    ;;
