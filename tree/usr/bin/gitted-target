@@ -409,6 +409,8 @@ script_command_sync() {
             || nef_fatal "subtree-merge failed with status $?"
         git nef-subtree join \
             || nef_fatal "subtree-join failed with status $?"
+        git nef-subtree push \
+            || nef_fatal "subtree-push failed with status $?"
     fi
 
     if [ no = $_no_push ]; then
