@@ -2,7 +2,7 @@
 
 . /usr/lib/sysconf.base/common.sh
 
-sysconf_require_packages lxc
+sysconf_require_packages lxc lxc-templates maildir-utils
 
 # Reload dnsmasq in case /etc/lxc/dnsmasq.hosts has changed
 killall -HUP dnsmasq
