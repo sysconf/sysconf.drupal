@@ -1000,7 +1000,7 @@ driver_lxc_exec() {
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
     done
-    [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
+    [ $_sh_c = yes ] && _argv=( sh -l -c "${_argv[@]}" )
 
     while [ yes = "$lxc_starting" ]; do
         nef_log "Container is still starting..."
