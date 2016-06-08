@@ -323,8 +323,8 @@ EOF
 [ -z "\$no_proxy" ] && no_proxy="localhost,127.0.0.1,localaddress,.localdomain.com"
 export http_proxy https_proxy ftp_proxy no_proxy
 EOF
-            driver_${current_driver}_exec --hybrid \
-                   -c "mkdir -p ${current_prefix}/etc/bash.bashrc.d/; ln -s ../profile.d/proxy.sh ${current_prefix}/etc/bash.bashrc.d/"
+            driver_${current_driver}_exec --hybrid -c "mkdir -p ${current_prefix}/etc/bash.bashrc.d/"
+            driver_${current_driver}_exec --hybrid -c "ln -s ../profile.d/proxy.sh ${current_prefix}/etc/bash.bashrc.d/"
         else
             nef_log "Proxy is not defined."
         fi
@@ -1005,6 +1005,11 @@ driver_lxc_exec() {
     done
     [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
 
+    while [ yes = "$lxc_starting" ]; do
+        nef_log "Container is still starting..."
+        sleep 1
+    done
+
     case "$driver_target_state" in
         running)
             ;;
@@ -1017,6 +1022,7 @@ driver_lxc_exec() {
 
 HINT: if you have just installed LXC, just reboot your system and retry (it is known)"
             network_ready=
+            lxc_starting=yes
             while [ "$network_ready" != ok ]; do
                 ip=$(lxc-info -i -H -n $driver_lxc_container_name)
                 if [ "$ip" = "" ]; then
@@ -1028,6 +1034,7 @@ HINT: if you have just installed LXC, just reboot your system and retry (it is k
                     network_ready=ok
                 fi
             done
+            lxc_starting=
 
             # nef_log -v "Waiting for a few seconds to let it be ready..."
             # sleep 2
