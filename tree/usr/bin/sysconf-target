@@ -1026,6 +1026,7 @@ driver_lxc_exec() {
 HINT: if you have just installed LXC, just reboot your system and retry (it is known)"
 
             while [ stop = "$driver_target_state" ]; do
+                nef_log "Waiting for container to start..."
                 driver_lxc_refresh_state
                 sleep 1
             done
