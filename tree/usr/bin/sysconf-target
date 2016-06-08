@@ -330,6 +330,7 @@ EOF
         fi
     fi
 
+
     # Check sysconf on target
     if [ $_force = no ]; then
         (driver_${current_driver}_exec --hybrid -c "test -d ${current_prefix}/sysconf") \
@@ -339,6 +340,7 @@ HINT: provide --force to overwrite"
     fi
 
     # Install sysconf
+    echo "............................."
     if [ "$_no_copy" = no ]; then
         if [ -n "$_git_ref" ]; then
             nef_log "Preparing Git commit from Sysconf repo: $GIT_DIR"
