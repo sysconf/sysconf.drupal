@@ -329,8 +329,10 @@ EOF
         else
             nef_log "Proxy is not defined."
         fi
+    echo ".............................0"
     fi
 
+    echo ".............................1"
 
     # Check sysconf on target
     if [ $_force = no ]; then
