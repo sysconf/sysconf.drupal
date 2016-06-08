@@ -323,7 +323,7 @@ EOF
 [ -z "\$no_proxy" ] && no_proxy="localhost,127.0.0.1,localaddress,.localdomain.com"
 export http_proxy https_proxy ftp_proxy no_proxy
 EOF
-            driver_${current_driver}_exec --hybrid -c "mkdir -p ${current_prefix}/etc/bash.bashrc.d/"
+            # driver_${current_driver}_exec --hybrid -c "mkdir -p ${current_prefix}/etc/bash.bashrc.d/"
             driver_${current_driver}_exec --hybrid -c "ln -s ../profile.d/proxy.sh ${current_prefix}/etc/bash.bashrc.d/"
         else
             nef_log "Proxy is not defined."
