@@ -324,6 +324,11 @@ EOF
 export http_proxy https_proxy ftp_proxy no_proxy
 EOF
             (driver_${current_driver}_exec --hybrid -c "mkdir -p ${current_prefix}/etc/bash.bashrc.d/; ln -s ../profile.d/proxy.sh ${current_prefix}/etc/bash.bashrc.d/")
+
+            cat <<EOF | driver_${current_driver}_exec --hybrid \
+                               -c "cat >>${current_prefix}/etc/apt/apt.conf.d/proxy"
+Acquire::http::Proxy "$http_proxy";
+EOF
         else
             nef_log "Proxy is not defined."
         fi
@@ -1000,7 +1005,7 @@ driver_lxc_exec() {
             *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
     done
-    [ $_sh_c = yes ] && _argv=( sh -l -c "${_argv[@]}" )
+    [ $_sh_c = yes ] && _argv=( sh -c "${_argv[@]}" )
 
     while [ yes = "$lxc_starting" ]; do
         nef_log "Container is still starting..."
