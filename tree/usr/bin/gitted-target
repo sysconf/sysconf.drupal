@@ -196,11 +196,11 @@ script_command_init() {
 #                       Config is written to the repository .git/config file.
 #                       This is the default behavior.
 #
-#       --system        gitted-target is copied by default to ~/bin
+#       --global        gitted-target is copied by default to ~/bin
 #                       Config is written to system-wide $(prefix)/etc/gitconfig
 #                       rather than the repository .git/config.
 #
-#       --global        gitted-target is copied by default to /usr/bin
+#       --system        gitted-target is copied by default to /usr/bin
 #                       Write to global ~/.gitconfig file rather than the
 #                       repository .git/config.
 #
