@@ -187,7 +187,7 @@ HINT: to create '$driver_target', push 'sysconf/master' to: $driver_target_name"
     #         fi
     #     fi
 
-    if [ $_need_init != yes ]; then
+    if [ "$_need_init" != yes ]; then
 
         [[ "$driver_target_branch" =~ ^@ ]] && driver_target_branch="\\$driver_target_branch"
 
@@ -195,8 +195,8 @@ HINT: to create '$driver_target', push 'sysconf/master' to: $driver_target_name"
 
         # Make the push reset on remote side
         GITTED_PUSH=$GITTED_CONFIG_RESET_MODE \
-        git push "ext::gitted-target %S $driver_target" \
-        "+${GITTED_CONFIG_RESET_COMMIT}:refs/heads/${driver_target_branch}" >&2
+            git push "ext::gitted-target %S $driver_target" \
+            "+${GITTED_CONFIG_RESET_COMMIT}:refs/heads/${driver_target_branch}" >&2
     fi
 }
 
