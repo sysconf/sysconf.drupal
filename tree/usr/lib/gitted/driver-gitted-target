@@ -187,14 +187,17 @@ HINT: to create '$driver_target', push 'sysconf/master' to: $driver_target_name"
     #         fi
     #     fi
 
-    [[ "$driver_target_branch" =~ ^@ ]] && driver_target_branch="\\$driver_target_branch"
+    if [ $_need_init != yes ]; then
 
-    nef_log "pushing to: ext::gitted-target %S $driver_target"
+        [[ "$driver_target_branch" =~ ^@ ]] && driver_target_branch="\\$driver_target_branch"
 
-    # Make the push reset on remote side
-    GITTED_PUSH=$GITTED_CONFIG_RESET_MODE \
+        nef_log "pushing to: ext::gitted-target %S $driver_target"
+
+        # Make the push reset on remote side
+        GITTED_PUSH=$GITTED_CONFIG_RESET_MODE \
         git push "ext::gitted-target %S $driver_target" \
         "+${GITTED_CONFIG_RESET_COMMIT}:refs/heads/${driver_target_branch}" >&2
+    fi
 }
 
 ################################################################################
