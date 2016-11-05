@@ -992,7 +992,7 @@ script_command_expand() {
         case "$1" in
             --usage-command) _usage_name=$2; shift 2 ;;
             --existing) _existing_only=yes; shift ;;
-            --comittable) _comittable=yes; shift ;;
+            --committable) _comittable=yes; shift ;;
             --resettable) _resettable=yes; shift ;;
             -h|--help) script_command_help expand; return ;;
             --) shift; break ;;
@@ -1074,6 +1074,7 @@ script_command_expand() {
                                     ## exit code 2 means dirMode is disabled AND
                                     # committable/resettable condition is not met
                                     # -> ignore the branch
+                                    true
 
                                 else
 
