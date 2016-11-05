@@ -136,7 +136,7 @@ gitted_driver_commit() {
 }
 
 gitted_driver_list() {
-    [ yes = "$GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE" \
+    [ yes = "$GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITTABLE" \
           -a yes != $GITTED_DRIVER_SUPPORTS_COMMIT ] \
         && return 3
 

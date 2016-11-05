@@ -682,8 +682,7 @@ script_command_show() {
     fi
 }
 
-#
-# Command: script_command_expand [options] <branch1> [<branch2>] ...
+# command: expand <branch1> [<branch2>] ...
 #
 # Expand '*' and '**' patterns on branch list
 #
@@ -726,35 +725,38 @@ script_command_expand() {
     local _usage_name=
     local _existing_only=no
     local _config
+    local _argv=()
+
     while [ -n "$1" ]; do
         case "$1" in
             --usage-command) _usage_name=$2; shift 2 ;;
             --existing) _existing_only=yes; shift ;;
-            --committable) export GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE=yes; shift ;;
+            --committable) export GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITTABLE=yes; shift ;;
             --resettable) export GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=yes; shift ;;
             -h|--help) script_command_help expand; return ;;
-            --) shift; break ;;
+            --) shift; _argv=("${_argv[@]}" "$@"); shift $# ;;
             -*) script_eval_common_option "$1"; shift ;;
-            *) break ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
         esac
     done
 
-    while [ -n "$1" ]; do
+    for _branch_spec in "${_argv[@]}"; do
+    # while [ -n "$1" ]; do
 
-        [[ "$1" =~ ^(([-a-zA-Z0-9.,!+=_@^%]+|\*\*?)(/|$))+$ ]] \
-            || nef_fatal_usage_command "$_usage_name" "invalid <state branch> pattern: $1"
+        [[ "$_branch_spec" =~ ^(([-a-zA-Z0-9.,!+=_@^%]+|\*\*?)(/|$))+$ ]] \
+            || nef_fatal_usage_command "$_usage_name" "invalid <state branch> pattern: $_branch_spec"
 
-        [[ "$1" =~ /$ ]] \
-            && nef_fatal_usage_command "$_usage_name" "invalid trailing slash for <state branch> pattern: $1"
+        [[ "$_branch_spec" =~ /$ ]] \
+            && nef_fatal_usage_command "$_usage_name" "invalid trailing slash for <state branch> pattern: $_branch_spec"
 
-        if [[ "$1" =~ \* ]]; then
+        if [[ "$_branch_spec" =~ \* ]]; then
 
             local _branch=
 
-            if [[ "$1" =~ \*\* ]]; then   ## branch has a "**": ignore existing branches altogether
+            if [[ "$_branch_spec" =~ \*\* ]]; then   ## branch has a "**": ignore existing branches altogether
 
                 local _driver_branches=
-                local _pattern="${1//\*\*/*}"
+                local _pattern="${_branch_spec//\*\*/*}"
                 local _ifs="$IFS"; IFS='*';
                 local _parts=($_pattern); IFS="$_ifs"
                 local _base=${_parts[0]}
@@ -784,7 +786,7 @@ script_command_expand() {
                 local _ok=
 
                 for _branch in $_driver_branches; do
-                    # nef_log "Expanding: $1: calling driver: $_branch"
+                    # nef_log "Expanding: $_branch_spec: calling driver: $_branch"
                     (
                         script_load_state_config $_branch
                         local _status=$?
@@ -795,34 +797,28 @@ script_command_expand() {
                                 nef_fatal --warn "could not load driver for branch, ignoring it: $_branch"
                             else
                                 export GITTED_CONFIG_DRIVER_ACTION=list
-                                export GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE=
-                                export GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=
                                 local _nested_branch=
                                 local _nested_branches=
-                                nef_log "nesting: $_branch"
+                                nef_log -v "Listing nested branches below: $_branch"
                                 _nested_branches=$(script_call_driver)
 
                                 if  [ $? -eq 2 ]; then  ## exit code 2 means dirMode is disabled:
-
                                     [[ $_branch =~ $_regex ]] && echo $_branch
 
                                 elif  [ $? -eq 3 ]; then
 
-                                    ## exit code 2 means dirMode is disabled AND
-                                    # committable/resettable condition is not met
-                                    # -> ignore the branch
+                                    nef_log -v "Branch ignored because of --resettable or --committable: $_branch"
                                     true
 
                                 else
-
                                     for _nested_branch in $_nested_branches; do
 
                                         _last_branch=${_branch}/${_nested_branch}
                                         if [[ $_last_branch =~ $_regex ]]; then
-                                            # nef_log "Expanding: $1: to branch: $_last_branch (included)"
+                                            # nef_log "Expanding: $_branch_spec: to branch: $_last_branch (included)"
                                             echo $_last_branch
                                             # else
-                                            # nef_log "Expanding: $1: to branch: $_last_branch (filtered out)"
+                                            # nef_log "Expanding: $_branch_spec: to branch: $_last_branch (filtered out)"
                                         fi
                                     done
                                     [ -n "$_nested_branch" ]
@@ -837,33 +833,34 @@ script_command_expand() {
                 done
 
                 [ -z "$_ok" ] \
-                    && nef_fatal_usage_command "$_usage_name" "pattern does not match any branch: $1"
+                    && nef_fatal_usage_command "$_usage_name" "pattern does not match any branch: $_branch_spec"
 
 
             else  ## branch has a "*", not "**": match against refs/heads/ files
 
                 cd $GIT_DIR/refs/heads
 
-                # echo command: find -path "./$1" -type f >&2
-                for _branch in $(find -path "./$1" -type f); do
+                # echo command: find -path "./$_branch_spec" -type f >&2
+                for _branch in $(find -path "./$_branch_spec" -type f); do
                     echo ${_branch#./}
                 done
-                [ -z "$_branch" ] && nef_fatal_usage_command "$_usage_name" "pattern does not match any branch: $1"
+                [ -z "$_branch" ] && nef_fatal_usage_command "$_usage_name" "pattern does not match any branch: $_branch_spec"
             fi
 
         else      ## no "*" or "**" in branch: just check --existing
 
-            [ -d $GIT_DIR/refs/heads/$1 ] \
-                && nef_fatal_usage_command "$_usage_name" "branch is a directory: $1"
+            [ -d $GIT_DIR/refs/heads/$_branch_spec ] \
+                && nef_fatal_usage_command "$_usage_name" "branch is a directory: $_branch_spec"
 
             if [ $_existing_only = yes ]; then
-                [ -f $GIT_DIR/refs/heads/$1 ] \
-                    || nef_fatal_usage_command "$_usage_name" "--existing given but branch does not exist: $1"
+                [ -f $GIT_DIR/refs/heads/$_branch_spec ] \
+                    || nef_fatal_usage_command "$_usage_name" "--existing given but branch does not exist: $_branch_spec"
             fi
-            echo "$1"
+            echo "$_branch_spec"
         fi
         shift
     done
+    return 0
 }
 
 ######################################################################
