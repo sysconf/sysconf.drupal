@@ -331,7 +331,7 @@ script_command_commit() {
         nef_log "Done."
     else
         nef_log "No commit happened actually."
-        exit 2
+        # exit 2 (should not fail 'gitted-target sync')
     fi
 }
 
