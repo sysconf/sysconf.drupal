@@ -334,6 +334,7 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
 # Synchronise all, by doing:
 # (<target> is got from 'git config --get remote.<remote>.url')
 #
+# - gitted status <target> '**'
 # - gitted commit <target> '**'
 # - git fetch <remote>
 # - foreach <branch> in <fetched branches>:
@@ -384,6 +385,7 @@ script_command_sync() {
     # local branches=$(git show-ref \
     #                         | grep " $remote_prefix/" \
     #                         | sed -r "s,[0-9a-z]+ $remote_prefix/(.*)$,\1,")
+
     # nef_log -v "Branches: $branches"
 
     if [ no = $_no_fetch ]; then
