@@ -1059,7 +1059,7 @@ script_command_expand() {
                                 export GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=
                                 local _nested_branch=
                                 local _nested_branches=
-                                nef_log "nesting"
+                                nef_log "nesting: $_branch"
                                 _nested_branches=$(script_call_driver)
 
                                 if  [ $? -eq 2 ]; then  ## exit code 2 means dirMode is disabled:
