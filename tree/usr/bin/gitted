@@ -1059,8 +1059,8 @@ script_command_expand() {
                                 export GITTED_CONFIG_DRIVER_ACTION=list
                                 export GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE=
                                 export GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=
-                                [ yes = $_commitable ] && GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE=yes
-                                [ yes = $_resettable ] && GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=yes
+                                [ yes = "$_commitable" ] && GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE=yes
+                                [ yes = "$_resettable" ] && GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=yes
                                 local _nested_branch=
                                 local _nested_branches=
                                 _nested_branches=$(script_call_driver)
