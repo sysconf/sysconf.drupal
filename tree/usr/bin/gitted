@@ -135,7 +135,7 @@ script_command_status() {
 
     script_return_status=yes # tell the caller not throw an error in case of non-null status
 
-    local _expanded_branches=$(script_expand_state_branches --usage-command status $_expand_opts -- "${_argv[@]}")
+    local _expanded_branches=$(script_command_expand --usage-command status $_expand_opts -- "${_argv[@]}")
     [ -z "$_expanded_branches" ] && return 1
 
     [ "$_view" = branches ] && echo "## Status of state branches"
@@ -282,7 +282,7 @@ script_command_commit() {
 
     script_return_status=yes # tell the caller not throw an error in case of non-null status
 
-    local _expanded_branches=$(script_expand_state_branches --usage-command status $_expand_opts -- "${_argv[@]}")
+    local _expanded_branches=$(script_command_expand --usage-command status --committable $_expand_opts -- "${_argv[@]}")
     [ -z "$_expanded_branches" ] && return 1
 
     local _tmp_ref=$(script_make_ref_date_prefix).commit
@@ -335,7 +335,7 @@ script_command_commit() {
     fi
 }
 
-# command: reset  <state branches>  [--to <commit>] [<mode>]
+# command: reset <state branches>  [--to <commit>] [<mode>]
 #
 # Reset the work state of <state branch> to the state of given Git commit
 #
@@ -429,7 +429,7 @@ script_command_reset() {
             || nef_fatal_usage_command reset "invalid --to <commit> argument: $_to"
     fi
 
-    local _expanded_branches=$(script_expand_state_branches --usage-command status $_expand_opts -- "${_argv[@]}")
+    local _expanded_branches=$(script_command_expand --usage-command status $_expand_opts -- "${_argv[@]}")
     [ -z "$_expanded_branches" ] && return 1
 
     local _tmp_ref=$(script_make_ref_date_prefix).commit
@@ -943,32 +943,60 @@ script_make_ref_date_prefix() {
 }
 
 #
-# some/branch   -> left untouched
-# dir/*         -> "*" is expanded to all descendants that exist PHYSICALLY
-# dir/*/suffix  -> same, restricting to suffix
-# a/b/**/suffix -> when "**" is encountered, the most specific driver
-#                   is identified (be it "a" or "a/b" or "a/b/c/d).
+# Command: script_command_expand [options] <branch1> [<branch2>] ...
 #
-#       First, a list of (*/suffix) is made from state configs.
-#       In this list, each driver is called for a ref list.
-#       That list is filtered after the ending part (following the driver prefix).
+# Expand '*' and '**' patterns on branch list
 #
-#, that will be merged with
-#       the branch list of any driver within "a/b".
+# Options:
 #
-#       For each driver found, call the "list" command.
-#       Restrict the list to any part after the driver path, replacing "**" with "*"
-#       (from ex above: "b/*/suffix" or "*/suffix" or "*/suffix")
+#   --usage-command NAME
 #
-script_expand_state_branches() {
+#   --existing
+#       Fail if any given branch does not exist.
+#
+#   --commitable
+#       Restrict to branches where commit is supported by the driver
+#
+#   --resettable
+#       Restrict to branches where reset is supported by the driver
+#
+# <branch> list is printed back to stdout, after expanding as follow:
+#
+#   First, a list of (*/suffix) is made from state configs.
+#   In this list, each driver is called for a ref list.
+#   That list is filtered after the ending part (following the driver prefix).
+#
+#   That will be merged with the branch list of any driver within "a/b".
+#
+#   For each driver found, the "list" command is executed on the driver.
+#   Restrict the list to any part after the driver path, replacing "**" with "*"
+#   (from ex above: "b/*/suffix" or "*/suffix" or "*/suffix")
+#
+# Branch pattern examples:
+#
+#   some/branch   -> left untouched
+#   dir/*         -> "*" is expanded to all descendants that exist PHYSICALLY
+#   dir/*/suffix  -> same, restricting to suffix
+#   a/b/**/suffix -> when "**" is encountered, the most specific driver
+#                     is identified (be it "a" or "a/b" or "a/b/c/d).
+#
+#
+##
+script_command_expand() {
     local _usage_name=
     local _existing_only=no
+    local _committable=no
+    local _resettable=no
     local _config
     while [ -n "$1" ]; do
         case "$1" in
             --usage-command) _usage_name=$2; shift 2 ;;
             --existing) _existing_only=yes; shift ;;
+            --comittable) _comittable=yes; shift ;;
+            --resettable) _resettable=yes; shift ;;
+            -h|--help) script_command_help expand; return ;;
             --) shift; break ;;
+            -*) script_eval_common_option "$1"; shift ;;
             *) break ;;
         esac
     done
@@ -1029,6 +1057,10 @@ script_expand_state_branches() {
                                 nef_fatal --warn "could not load driver for branch, ignoring it: $_branch"
                             else
                                 export GITTED_CONFIG_DRIVER_ACTION=list
+                                export GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE=
+                                export GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=
+                                [ yes = $_commitable ] && GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE=yes
+                                [ yes = $_resettable ] && GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=yes
                                 local _nested_branch=
                                 local _nested_branches=
                                 _nested_branches=$(script_call_driver)
@@ -1036,6 +1068,13 @@ script_expand_state_branches() {
                                 if  [ $? -eq 2 ]; then  ## exit code 2 means dirMode is disabled:
 
                                     [[ $_branch =~ $_regex ]] && echo $_branch
+
+                                elif  [ $? -eq 3 ]; then
+
+                                    ## exit code 2 means dirMode is disabled AND
+                                    # committable/resettable condition is not met
+                                    # -> ignore the branch
+
                                 else
 
                                     for _nested_branch in $_nested_branches; do
