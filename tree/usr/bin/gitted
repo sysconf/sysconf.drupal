@@ -985,15 +985,13 @@ script_make_ref_date_prefix() {
 script_command_expand() {
     local _usage_name=
     local _existing_only=no
-    local _committable=no
-    local _resettable=no
     local _config
     while [ -n "$1" ]; do
         case "$1" in
             --usage-command) _usage_name=$2; shift 2 ;;
             --existing) _existing_only=yes; shift ;;
-            --committable) _comittable=yes; shift ;;
-            --resettable) _resettable=yes; shift ;;
+            --committable) export GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE=yes; shift ;;
+            --resettable) export GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=yes; shift ;;
             -h|--help) script_command_help expand; return ;;
             --) shift; break ;;
             -*) script_eval_common_option "$1"; shift ;;
@@ -1059,8 +1057,6 @@ script_command_expand() {
                                 export GITTED_CONFIG_DRIVER_ACTION=list
                                 export GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE=
                                 export GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=
-                                [ yes = "$_commitable" ] && GITTED_CONFIG_DRIVER_LIST_ONLY_COMMITABLE=yes
-                                [ yes = "$_resettable" ] && GITTED_CONFIG_DRIVER_LIST_ONLY_RESETTABLE=yes
                                 local _nested_branch=
                                 local _nested_branches=
                                 _nested_branches=$(script_call_driver)
