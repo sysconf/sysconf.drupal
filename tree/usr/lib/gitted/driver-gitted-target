@@ -131,13 +131,14 @@ gitted_driver_commit() {
 gitted_driver_reset() {
     driver_load_target
 
-    if [ $GITTED_CONFIG_RESET_COMMIT = $GITTED_NULL_SHA1 ]; then
-        [ $driver_target_state = missing ] \
-            && nef_fatal "Cannot remove missing target: $driver_target"
-        nef_fatal "Removing target is not supported (state = $driver_target_state): $driver_target"
-    fi
-
     if [ "$driver_target_branch" = sysconf/master ]; then
+
+        if [ $GITTED_CONFIG_RESET_COMMIT = $GITTED_NULL_SHA1 ]; then
+            [ $driver_target_state = missing ] \
+                && nef_fatal "Cannot remove missing target: $driver_target"
+            nef_fatal "Removing target is not supported (state = $driver_target_state): $driver_target"
+        fi
+
         local _need_init=no
         if [ $driver_target_state = missing ]; then
             _need_init=yes
@@ -187,14 +188,17 @@ HINT: to create '$driver_target', push 'sysconf/master' to: $driver_target_name"
     #         fi
     #     fi
 
-    [[ "$driver_target_branch" =~ ^@ ]] && driver_target_branch="\\$driver_target_branch"
+    if [ "$_need_init" != yes ]; then
 
-    nef_log "pushing to: ext::gitted-target %S $driver_target"
+        [[ "$driver_target_branch" =~ ^@ ]] && driver_target_branch="\\$driver_target_branch"
 
-    # Make the push reset on remote side
-    GITTED_PUSH=$GITTED_CONFIG_RESET_MODE \
-        git push "ext::gitted-target %S $driver_target" \
-        "+${GITTED_CONFIG_RESET_COMMIT}:refs/heads/${driver_target_branch}" >&2
+        nef_log "pushing to: ext::gitted-target %S $driver_target"
+
+        # Make the push reset on remote side
+        GITTED_PUSH=$GITTED_CONFIG_RESET_MODE \
+            git push "ext::gitted-target %S $driver_target" \
+            "+${GITTED_CONFIG_RESET_COMMIT}:refs/heads/${driver_target_branch}" >&2
+    fi
 }
 
 ################################################################################
