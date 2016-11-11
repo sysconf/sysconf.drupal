@@ -2,9 +2,8 @@
 
 ## Services
 
-* etherpad
-* owncloud
-* git
+* blog
+* clipperz
 
 ## Git subtrees
 
