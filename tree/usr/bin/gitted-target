@@ -34,6 +34,7 @@ if [ $? -ne 0 ]; then
     exit 2
 fi
 sysconf_target_script=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH which sysconf-target)
+git_nef_subtree_path=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH which sysconf-target)
 
 ######################################################################
 # DEFAULTS
@@ -301,6 +302,7 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
     cp $_cp_opts $_source_script $_script_dir/
     cp $_cp_opts "$sysconf_target_script" $_script_dir
     cp $_cp_opts "$lib_shell_command_path" $_script_dir
+    cp $_cp_opts "$git_nef_subtree_path" $_script_dir
 
     # Setup Git config
     _git_config_cmd() {
