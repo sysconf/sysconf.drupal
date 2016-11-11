@@ -33,8 +33,10 @@ if [ $? -ne 0 ]; then
     echo "      (symlinking works; sysconf being installed in /usr also works)" >&2
     exit 2
 fi
-sysconf_target_script=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH which sysconf-target)
-git_nef_subtree_path=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH which sysconf-target)
+sysconf_target_script=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH \
+                            which sysconf-target)
+git_nef_subtree_path=$(PATH=$script_dir:$script_dir/../../../../sysconf.gitted/tree/usr/bin:$PATH \
+                           which git-nef-subtree)
 
 ######################################################################
 # DEFAULTS
@@ -298,11 +300,17 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
             fi
         fi
     fi
-    nef_log "Copy '$_source_script' to $_script_dir ..."
-    cp $_cp_opts $_source_script $_script_dir/
-    cp $_cp_opts "$sysconf_target_script" $_script_dir
-    cp $_cp_opts "$lib_shell_command_path" $_script_dir
-    cp $_cp_opts "$git_nef_subtree_path" $_script_dir
+    for _file in "$_source_script" \
+                     "$sysconf_target_script" \
+                     "$lib_shell_command_path" \
+                     "$git_nef_subtree_path" \
+                 ; do
+        nef_log "Copy '$_file' to: $_script_dir/"
+        cp $_cp_opts "$_file" "$_script_dir/"
+    done
+    # cp $_cp_opts "$sysconf_target_script" $_script_dir
+    # cp $_cp_opts "$lib_shell_command_path" $_script_dir
+    # cp $_cp_opts "$git_nef_subtree_path" $_script_dir
 
     # Setup Git config
     _git_config_cmd() {
