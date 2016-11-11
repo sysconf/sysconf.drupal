@@ -33,10 +33,9 @@ if [ $? -ne 0 ]; then
     echo "      (symlinking works; sysconf being installed in /usr also works)" >&2
     exit 2
 fi
-sysconf_target_script=$(PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$PATH \
-                            which sysconf-target)
-git_nef_subtree_path=$(PATH=$script_dir:$script_dir/../../../../sysconf.gitted/tree/usr/bin:$PATH \
-                           which git-nef-subtree)
+export PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$script_dir/../../../../sysconf.gitted/tree/usr/bin:$PATH
+sysconf_target_script=$(which sysconf-target)
+git_nef_subtree_path=$(which git-nef-subtree)
 
 ######################################################################
 # DEFAULTS
