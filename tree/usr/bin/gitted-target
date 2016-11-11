@@ -329,7 +329,7 @@ HINT: give --force to overwrite, specify --file or run the right $nef_command_na
     fi
 }
 
-# command: sync <remote>
+# command: sync <remote> [<branch>]
 #
 # Synchronise all
 #
@@ -370,25 +370,31 @@ script_command_sync() {
     done
 
     [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command sync "too few arguments"
-    [ "${#_argv[@]}" -gt 1 ] && nef_fatal_usage_command sync "too many arguments"
+    [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command sync "too many arguments"
 
 
     local _remote="${_argv[0]}"
+    local _branch="${_argv[1]}"
     local _target=$(script_git_remote_to_gitted_target "$_remote")
     nef_log "Working on remote \"$_remote\", target \"$_target\""
     [ -n "$_target" ] || nef_fatal "remote \"$_remote\" is missing or is not a gitted remote"
 
     if [ no = $_no_fetch ]; then
-        (script_command_commit "$_target" '**') \
+        local _arg='**'
+        [ -n "$_branch" ] && _arg="$_branch"
+        (script_command_commit "$_target" "$_arg") \
             || nef_fatal "gitted-commit failed with status $?"
-        nef_log "Fetching all branches from remote: $_remote"
-        git fetch -v "$_remote" \
+        nef_log "Fetching branch '${_branch-(all)}' from remote: $_remote"
+        git fetch -v "$_remote" $_branch \
             || nef_fatal "git-fetch failed with status $?"
     fi
     local remote_prefix=refs/remotes/$_remote
-    local branches=$(git show-ref \
-                            | grep " $remote_prefix/" \
-                            | sed -r "s,[0-9a-z]+ $remote_prefix/(.*)$,\1,")
+    local branches=$_branch
+    if [ -z "$branches" ]; then
+        branches=$(git show-ref \
+                          | grep " $remote_prefix/" \
+                          | sed -r "s,[0-9a-z]+ $remote_prefix/(.*)$,\1,")
+    fi
 
     nef_log -v "Branches: $branches"
     for branch in $branches; do
