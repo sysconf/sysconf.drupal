@@ -345,6 +345,10 @@ sysconf_require_packages()
 
     if [ -n "$_packages" ]; then
         export DEBIAN_FRONTEND=noninteractive
+
+        [ $(date "+%Y-%m-%d") = "$(stat /var/lib/apt/lists -c "%y" | sed 's/ .*//')" ] \
+            || apt-get update
+
         # sysconf_apt-get install --yes --no-upgrade $_packages
         sysconf_apt-get install \
                         --yes --force-yes -o Dpkg::Options::=--force-confdef \
@@ -581,6 +585,15 @@ while [ "$1" != "" ]; do
             else
                 $command | grep "$filter"
             fi
+            ;;
+
+        environment)
+            nef_read_args "$@"
+            shift $((OPTIND-1))
+            load_environment
+	    prefix="$1"
+	    shift
+            set | grep "^$prefix"
             ;;
 
         help)
