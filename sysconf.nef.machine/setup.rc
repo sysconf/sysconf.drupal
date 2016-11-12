@@ -3,6 +3,8 @@
 _packages=""
 _packages="$_packages openssh-server nano"
 _packages="$_packages rsyslog"
+_packages="$_packages duplicity python-paramiko"
+# rsync backupninja
 _packages="$_packages collectd"
 
 sysconf_require_packages "$_packages"
@@ -10,3 +12,14 @@ sysconf_require_packages "$_packages"
 if [ -f /root/.bashrc ]; then
     mv /root/.bashrc{,.orig}
 fi
+
+key_file=~/.ssh/id_rsa
+if ! [ -r $key_file ]; then
+    ssh-keygen -t rsa -f $key_file -P ""
+    echo "Public key to enable on backup"
+    echo "=============================="
+    cat $key_file.pub
+    echo "=============================="
+fi
+
+# http://uname.pingveno.net/blog/index.php/post/2015/02/21/Configurer-un-backup-incr%C3%A9mental-avec-duplicity,-rsync,-et-backupninja-sous-Debian
