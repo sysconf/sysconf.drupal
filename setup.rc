@@ -3,6 +3,8 @@
 _packages=""
 _packages="$_packages openssh-server nano"
 _packages="$_packages rsyslog"
+_packages="$_packages backupninja duplicity python-paramiko"
+# rsync backupninja
 _packages="$_packages collectd"
 
 sysconf_require_packages "$_packages"
@@ -10,3 +12,31 @@ sysconf_require_packages "$_packages"
 if [ -f /root/.bashrc ]; then
     mv /root/.bashrc{,.orig}
 fi
+
+################################################################################
+# Backups
+
+key_file=~/.ssh/id_rsa
+if ! [ -r $key_file ]; then
+    ssh-keygen -t rsa -f $key_file -P ""
+    echo "Public key to enable on backup"
+    echo "=============================="
+    cat $key_file.pub
+    echo "=============================="
+fi
+
+ssh_dir=/root/.ssh
+if ! grep -q "Host nef-dup-host" $ssh_dir/config; then
+    echo "Adding section 'Host nef-dup-host' to: $ssh_dir/config"
+    sysconf_fix_directory $ssh_dir 700
+
+    cat <<EOF >>$ssh_dir/config
+
+Host nef-dup-host
+  Hostname adhara.geonef.fr
+  Port 22222
+  User $(hostname)
+EOF
+fi
+
+# http://uname.pingveno.net/blog/index.php/post/2015/02/21/Configurer-un-backup-incr%C3%A9mental-avec-duplicity,-rsync,-et-backupninja-sous-Debian
