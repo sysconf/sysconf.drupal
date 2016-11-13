@@ -33,7 +33,7 @@ if [ $? -ne 0 ]; then
     echo "      (symlinking works; sysconf being installed in /usr also works)" >&2
     exit 2
 fi
-export PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$script_dir/../../../../sysconf.gitted/tree/usr/bin:.:$PATH
+export PATH=$script_dir:$script_dir/../../../../sysconf.base/tree/usr/bin:$script_dir/../../../../sysconf.gitted/tree/usr/bin:$PATH
 sysconf_target_script=$(which sysconf-target)
 git_nef_subtree_path=$(which git-nef-subtree)
 
@@ -383,6 +383,10 @@ script_command_sync() {
     [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command sync "too few arguments"
     [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command sync "too many arguments"
 
+    echo '****'
+    git nef-subtree
+    echo '****2'
+    git-nef-subtree
 
     local _remote="${_argv[0]}"
     local _branch="${_argv[1]}"
@@ -710,6 +714,7 @@ script_parse_cmdline() {
         script_git_dir=$PWD/$script_git_dir
     }
     [ -z "$script_git_dir" ] && nef_fatal "not in GIT directory or working tree"
+    PATH=$script_git_dir:$PATH
 
     # Run command
     script_command_name="${script_command_argv[0]}"
