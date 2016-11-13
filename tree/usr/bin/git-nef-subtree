@@ -1,4 +1,12 @@
 #!/bin/bash
+#
+# git-nef-subtree - Automatize management of multiple Git subtrees
+#
+# Must be runned from within a Git repository.
+# If no <branch> argument is given, all branches are managed.
+#
+# git-nef-subtree split [<branch>]:
+
 
 if [ $# -eq 0 ]; then
     set -- -h
@@ -6,11 +14,26 @@ fi
 OPTS_SPEC="\
 git nef-subtree clean
 git nef-subtree split [<branch1>] ...
+        Split all subtrees form branches and save them to .git/refs/sub/
+
 git nef-subtree fetch (subtrees)
+        Fetch all subtree into .git/refs/sub/ from upstreams
+        as defined in each subtree's README[.md]
+
 git nef-subtree merge (subtrees)
+        For each SUBTREE, merge .git/refs/sub/SUBTREE/*
+                          into: .git/refs/sub/SUBTREE/merge
+
 git nef-subtree join  [<branch1>] ...
+        For each SUBTREE, subtree-merge: .git/refs/sub/SUBTREE/merge
+        as subtree into branches' tree.
+
 git nef-subtree push  (subtrees)
-git nef-subtree sync  (all)
+        Push all subtree from .git/refs/sub/ to upstreams
+        as defined in each subtree's README[.md]
+
+git nef-subtree sync  [<branch1>] ...
+        Perform: split, fetch, merge, join, push
 --
 h,help        show the help
 q             quiet
@@ -322,13 +345,8 @@ _cmd_merge_one_subtree()
 
 cmd_merge()
 {
-    _opts=()
-    if [ $# -gt 0 ]; then
-        _opts=("${_opts[@]}" --branches "$*")
-    fi
-
     # perform merge between all sub-branches of each given subtree
-    foreach_subtree "${_opts[@]}" _cmd_merge_one_subtree "$@"
+    foreach_subtree _cmd_merge_one_subtree "$@"
 }
 
 ################################################################################
@@ -336,11 +354,11 @@ cmd_merge()
 
 cmd_sync()
 {
-    cmd_split
-    cmd_fetch
-    cmd_merge
-    cmd_join
-    cmd_push
+    cmd_split "$@"
+    cmd_fetch "$@"
+    cmd_merge "$@"
+    cmd_join "$@"
+    cmd_push "$@"
 }
 
 
