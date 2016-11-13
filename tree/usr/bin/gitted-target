@@ -427,13 +427,13 @@ script_command_sync() {
     done
 
     if [ no = $_no_subtree ]; then
-        git nef-subtree fetch \
+        git nef-subtree fetch $branches \
             || nef_fatal "subtree-fetch failed with status $?"
-        git nef-subtree merge \
+        git nef-subtree merge $branches \
             || nef_fatal "subtree-merge failed with status $?"
-        git nef-subtree join \
+        git nef-subtree join $branches \
             || nef_fatal "subtree-join failed with status $?"
-        git nef-subtree push \
+        git nef-subtree push $branches \
             || nef_fatal "subtree-push failed with status $?"
     fi
 
