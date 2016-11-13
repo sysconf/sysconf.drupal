@@ -125,7 +125,7 @@ foreach_branch_subtree() {
     _opts=()
     while true; do
         case "$1" in
-            # --branches) _opts=("${_opts[@]}" --branches "$2"); shift 2 ;;
+            --branches) _opts=("${_opts[@]}" --branches "$2"); shift 2 ;;
             *) break ;;
         esac
     done
@@ -163,12 +163,12 @@ _cmd_split_one() {
 }
 
 cmd_split() {
-    # _opts=()
-    # if [ $# -gt 0 ]; then
-    #     _opts=("${_opts[@]}" --branches "$*")
-    # fi
-    # foreach_branch_subtree "${_opts[@]}" _cmd_split_one
-    foreach_branch_subtree _cmd_split_one "$@"
+    _opts=()
+    if [ $# -gt 0 ]; then
+        _opts=("${_opts[@]}" --branches "$*")
+    fi
+    foreach_branch_subtree "${_opts[@]}" _cmd_split_one
+    # foreach_branch_subtree _cmd_split_one "$@"
 }
 
 _cmd_join_one_branch_subtree()
@@ -190,7 +190,11 @@ _cmd_join_one_branch_subtree()
 
 # integrate the merge back into the branch (opposite of the 'split' command)
 cmd_join() {
-    foreach_branch_subtree _cmd_join_one_branch_subtree "$@"
+    _opts=()
+    if [ $# -gt 0 ]; then
+        _opts=("${_opts[@]}" --branches "$*")
+    fi
+    foreach_branch_subtree "${_opts[@]}" _cmd_join_one_branch_subtree "$@"
 }
 
 ################################################################################
