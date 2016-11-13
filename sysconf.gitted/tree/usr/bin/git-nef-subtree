@@ -211,7 +211,7 @@ _cmd_fetch_one_subtree_remote() {
 
 }
 cmd_fetch() {
-    foreach_subtree_remote _cmd_fetch_one_subtree_remote
+    foreach_subtree_remote $@ _cmd_fetch_one_subtree_remote
 }
 # PUSH
 _cmd_push_one_subtree_remote() {
@@ -221,7 +221,7 @@ _cmd_push_one_subtree_remote() {
     git push "$remote_url" "$local_ref:$remote_branch"
 }
 cmd_push() {
-    foreach_subtree_remote _cmd_push_one_subtree_remote
+    foreach_subtree_remote $@ _cmd_push_one_subtree_remote
 }
 
 ################################################################################
@@ -268,7 +268,7 @@ _cmd_merge_one_subtree()
 cmd_merge()
 {
     # perform merge between all sub-branches of each given subtree
-    foreach_subtree _cmd_merge_one_subtree
+    foreach_subtree $@ _cmd_merge_one_subtree
 }
 
 ################################################################################
