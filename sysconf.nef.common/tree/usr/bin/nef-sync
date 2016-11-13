@@ -197,7 +197,7 @@ fi
 rsync=rsync
 [ "$opt_simulate" = "1" ] && rsync="echo rsync"
 
-if (set -x; exec time $rsync \
+if (set -x; exec $rsync \
     "${NEFSYNC_DEFAULT_OPTIONS_ARRAY[@]}" \
     "--log-file=$rsync_log" \
     "${NEFSYNC_OPTIONS_ARRAY[@]}" \
