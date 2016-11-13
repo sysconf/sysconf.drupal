@@ -964,6 +964,15 @@ driver_lxc_create() {
 
         driver_lxc_refresh_state
 
+        # # Fix hostname
+        # container_hostname=$(grep -E "^lxc.utsname *=" $_configpath | sed -r 's/^[^=]+ *= *//')
+        # if ! [[ "$container_hostname" =~ \. ]]; then
+        #     new_hostname="$container_hostname.$(hostname)"
+        #     sed -i -r 's/^(lxc.utsname *= *).*/\1'$new_hostname'/' $_configpath \
+        #         && nef_log "Fixed container hostname to: $new_hostname"
+        # fi
+
+        # Fix IP address
         if [ $(id -u) -ne 0 ]; then
             # fix hwaddr to avoid redundant 00:16:3e:ff:ff:ff (leading to IP conflict)
             local a=$((RANDOM % 256))
@@ -991,6 +1000,12 @@ driver_lxc_create() {
                 || nef_fatal "Could not fix container config for lxc:confined: $_configpath"
         fi
     fi
+    local _container_hostname=$driver_lxc_container_name.$(hostname)
+    nef_log "Fixing container hostname to: $_container_hostname"
+    (driver_lxc_exec --hybrid -c "echo $_container_hostname >/etc/hostname")
+    lxc-stop -n $driver_lxc_container_name -t 30 \
+        && nef_log "Stopped container: $driver_lxc_container_name"
+
 }
 
 driver_lxc_exec() {
