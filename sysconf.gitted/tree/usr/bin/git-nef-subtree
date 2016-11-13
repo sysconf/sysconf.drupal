@@ -213,7 +213,7 @@ _cmd_join_one_branch_subtree()
     prev_head=$(git rev-parse HEAD)
     # say "Running: git subtree merge -P $subtree $_merging_ref"
     # git subtree merge -P $subtree $_merging_ref
-    git merge -Xsubtree="$subtree" -Xtheirs $_merging_ref
+    git merge -Xsubtree="$subtree" -Xtheirs -m "Merge commit '$_merging_ref' into $_branch as subtree '$subtree' (by git-nef-subtree)" $_merging_ref
 
     if [ $? -ne 0 ]; then
         die "merge conflict"
@@ -327,7 +327,7 @@ _cmd_merge_one_subtree()
     for _merging_ref in $_tomerge; do
 
         # say "  merging into $subtree_merge_ref: $_merging_ref"
-        git merge --no-edit $_merging_ref \
+        git merge -m "Merge commit '$_merging_ref' into $subtree_merge_ref for subtree '$subtree' (by git-nef-subtree)" $_merging_ref \
             || die "git-merge failed with status $? at merging ref: $_merging_ref"
         # die grr
     done
