@@ -33,9 +33,9 @@ if ! grep -q "Host nef-dup-host" $ssh_dir/config; then
     cat <<EOF >>$ssh_dir/config
 
 Host nef-dup-host
-  Hostname adhara.geonef.fr
-  Port 22222
-  User $(hostname)
+  Hostname $NEF_MACHINE_BACKUP_HOST
+  Port ${NEF_MACHINE_BACKUP_PORT:-22222}
+  User ${NEF_MACHINE_BACKUP_USER:-$(hostname)}
 EOF
 fi
 

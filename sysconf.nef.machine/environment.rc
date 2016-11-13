@@ -1,0 +1,10 @@
+# Settings for sysconf profile: sysconf.nef.machine       -*- shell-script -*-
+
+. /etc/sysconf/inherited/physical.environment.rc
+
+# Options:
+# NEF_MACHINE_BACKUP_HOST
+# NEF_MACHINE_BACKUP_PORT
+# NEF_MACHINE_BACKUP_USER
+
+# [ -z "$NEF_MACHINE_BACKUP_HOST" ] && NEF_MACHINE_BACKUP_HOST=alhena.geonef.fr
