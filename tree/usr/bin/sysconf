@@ -278,7 +278,7 @@ add_file()
 {
     local config="$1"
     local file=
-    if which realpath 2>/dev/null; then
+    if which realpath >/dev/null; then
         file=$(realpath --no-symlinks "$2")
     else
         file="$(cd "$(dirname "$2")"; pwd)/$(basename "$2")"
