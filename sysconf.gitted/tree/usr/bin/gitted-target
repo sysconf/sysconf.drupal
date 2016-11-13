@@ -383,11 +383,6 @@ script_command_sync() {
     [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command sync "too few arguments"
     [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command sync "too many arguments"
 
-    echo '****'
-    git nef-subtree
-    echo '****2'
-    git-nef-subtree
-
     local _remote="${_argv[0]}"
     local _branch="${_argv[1]}"
     local _target=$(script_git_remote_to_gitted_target "$_remote")
