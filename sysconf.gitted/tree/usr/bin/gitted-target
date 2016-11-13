@@ -415,6 +415,7 @@ script_command_sync() {
     fi
 
     nef_log -v "Branches: $branches"
+    git nef-subtree clean
     for branch in $branches; do
         nef_log "** branch: $branch"
         git checkout --quiet $branch
