@@ -238,7 +238,15 @@ _each_subtree_remote() {
     IFS="$old_ifs"
 }
 foreach_subtree_remote() {
-    foreach_subtree "${_opts[@]}" _each_subtree_remote "$@"
+    _opts=()
+    while true; do
+        case "$1" in
+            --branches) _opts=("${_opts[@]}" --branches "$2"); shift 2 ;;
+            *) break ;;
+        esac
+    done
+
+    foreach_subtree _each_subtree_remote "${_opts[@]}" "$@"
 }
 
 # FETCH
