@@ -52,7 +52,15 @@ print_branch_readme_sha1() {
 }
 print_subtree_remotes()
 {
-    foreach_branch print_branch_readme_sha1 \
+    _opts=()
+    while true; do
+        case "$1" in
+            --branches) _opts=("${_opts[@]}" --branches "$2"); shift 2 ;;
+            *) break ;;
+        esac
+    done
+
+    foreach_branch "${_opts[@]}" print_branch_readme_sha1 \
         | xargs -r -n 1 git cat-file -p \
         | grep " -P $1 " \
         | sed -r 's,git subtree [a-z]+ +-P *[^ ]+ (.*),\1,' \
@@ -202,12 +210,20 @@ cmd_join() {
 ## FETCH / PUSH
 
 _each_subtree_remote() {
+    _opts=()
+    while true; do
+        case "$1" in
+            --branches) _opts=("${_opts[@]}" --branches "$2"); shift 2 ;;
+            *) break ;;
+        esac
+    done
+
     say ""
-    say "*** Subtree: $subtree" >&2
+    say "*** Subtree: $subtree [${_opts[*]}]" >&2
 
     old_ifs="$IFS"
     IFS=$'\n'
-    for _remote in $(print_subtree_remotes "$subtree"); do
+    for _remote in $(print_subtree_remotes "${_opts[@]}" "$subtree"); do
 
         IFS="$old_ifs"
         local def=($_remote)
@@ -222,7 +238,7 @@ _each_subtree_remote() {
     IFS="$old_ifs"
 }
 foreach_subtree_remote() {
-    foreach_subtree _each_subtree_remote "$@"
+    foreach_subtree "${_opts[@]}" _each_subtree_remote "$@"
 }
 
 # FETCH
@@ -232,7 +248,12 @@ _cmd_fetch_one_subtree_remote() {
 
 }
 cmd_fetch() {
-    foreach_subtree_remote _cmd_fetch_one_subtree_remote
+    _opts=()
+    if [ $# -gt 0 ]; then
+        _opts=("${_opts[@]}" --branches "$*")
+    fi
+
+    foreach_subtree_remote "${_opts[@]}" _cmd_fetch_one_subtree_remote
 }
 # PUSH
 _cmd_push_one_subtree_remote() {
@@ -242,7 +263,12 @@ _cmd_push_one_subtree_remote() {
     git push "$remote_url" "$local_ref:$remote_branch"
 }
 cmd_push() {
-    foreach_subtree_remote _cmd_push_one_subtree_remote
+    _opts=()
+    if [ $# -gt 0 ]; then
+        _opts=("${_opts[@]}" --branches "$*")
+    fi
+
+    foreach_subtree_remote "${_opts[@]}" _cmd_push_one_subtree_remote
 }
 
 ################################################################################
@@ -288,8 +314,13 @@ _cmd_merge_one_subtree()
 
 cmd_merge()
 {
+    _opts=()
+    if [ $# -gt 0 ]; then
+        _opts=("${_opts[@]}" --branches "$*")
+    fi
+
     # perform merge between all sub-branches of each given subtree
-    foreach_subtree _cmd_merge_one_subtree "$@"
+    foreach_subtree "${_opts[@]}" _cmd_merge_one_subtree "$@"
 }
 
 ################################################################################
