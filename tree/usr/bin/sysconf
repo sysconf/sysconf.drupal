@@ -384,6 +384,16 @@ sysconf_fix_user()
         chown -R $_name:$_name $_home
     }
 }
+sysconf_fix_group()
+{
+    local _name="$1"
+    shift
+
+    grep -q ^$_name: /etc/group || {
+        echo "Creating missing group: $_name"
+        groupadd "$@" $_name
+    }
+}
 
 ######################################################################
 # FROM sysconf.base library
