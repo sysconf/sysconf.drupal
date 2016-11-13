@@ -137,6 +137,7 @@ foreach_subtree() {
     for subtree in $(list_subtrees); do
         subtree_ref_base=$ref_base/$subtree
         subtree_merge_ref=$subtree_ref_base/_merge
+        say "** FOR SUBTREE $subtree DO: $*"
         "$@"
     done
 }
@@ -146,10 +147,10 @@ foreach_subtree() {
 
 cmd_clean() {
     if [ -d .git/refs/sub ]; then
-        echo "Removing: .git/refs/sub/"
+        say "Removing: .git/refs/sub/"
         rm -rf .git/refs/sub/
     else
-        echo "Clean already."
+        say "Clean already."
     fi
 }
 
@@ -201,6 +202,7 @@ cmd_join() {
 ## FETCH / PUSH
 
 _each_subtree_remote() {
+    say ""
     say "*** Subtree: $subtree" >&2
 
     old_ifs="$IFS"
@@ -214,6 +216,7 @@ _each_subtree_remote() {
         local_branch=remote-$(echo "$_remote" | sha1sum | awk '{print $1}' | sed -r 's,^(.{8}).*,\1,')
         local_ref=$subtree_ref_base/$local_branch
 
+        say "** FOR REMOTE $_remote OF SUBTREE $subtree DO: $*"
         "$@"
     done
     IFS="$old_ifs"

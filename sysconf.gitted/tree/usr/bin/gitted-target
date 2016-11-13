@@ -414,10 +414,10 @@ script_command_sync() {
                           | sed -r "s,[0-9a-z]+ $remote_prefix/(.*)$,\1,")
     fi
 
-    nef_log -v "Branches: $branches"
+    nef_log "*** Syncing branches: $branches"
     git nef-subtree clean
     for branch in $branches; do
-        nef_log "** branch: $branch"
+        nef_log "** Checking out + splitting branch: $branch"
         git checkout --quiet $branch
         git merge $remote_prefix/$branch \
             || nef_fatal "merge conflict :("
