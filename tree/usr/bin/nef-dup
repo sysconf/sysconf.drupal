@@ -128,7 +128,7 @@ script_command_list() {
 ##
 script_command_backup() {
     local _dry=no
-    local _dup_options=()
+    local _dup_options=("${NEFDUP_OPTIONS_ARRAY[@]}")
     local _argv=()
 
     while [ -n "$1" ]; do
