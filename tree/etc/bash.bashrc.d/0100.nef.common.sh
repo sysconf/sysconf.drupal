@@ -157,3 +157,11 @@ xat() {
     lxc-attach --clear-env -n "$1" -- env USER=root HOME=/root TERM="$TERM" bash -l
 }
 alias gt='git ted'
+
+nef_env_git()
+{
+    local _git_prompt_dir=/usr/share/bash-git-prompt
+    echo "Loading bash-git-prompt from: $_git_prompt_dir"
+    . $_git_prompt_dir/gitprompt.sh
+    GIT_PROMPT_ONLY_IN_REPO=1
+}
