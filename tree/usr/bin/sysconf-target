@@ -966,12 +966,7 @@ driver_lxc_create() {
         fi
 
         nef_log "Creating LXC container '$driver_lxc_container_name' with distrib '$distrib', release '$release'..."
-        if [ -n "$driver_lxc_create_opts" ]; then
-            nef_log -v "lxc-create extra options: $driver_lxc_create_opts"
-        fi
-        if [ -n "$driver_lxc_create_template_opts" ]; then
-            nef_log -v "lxc-create extra template options: $driver_lxc_create_template_opts"
-        fi
+        nef_log -v "Running: lxc-create -n $driver_lxc_container_name $driver_lxc_create_opts -t download -- -d $distrib -r $release -a $arch $driver_lxc_create_template_opts"
 
         lxc-create -n $driver_lxc_container_name $driver_lxc_create_opts \
             -t download -- -d $distrib -r $release -a $arch $driver_lxc_create_template_opts \
