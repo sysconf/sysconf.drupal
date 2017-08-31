@@ -299,11 +299,13 @@ HINT: run 'git status' and 'git commit' to save changes, or pass
 
     # Copy SSH public key (--custom ssh-pubkey)
     if echo $_custom | grep -Eq "(^|,)ssh-pubkey($|,)"; then
-        if [ -f ~/.ssh/id_dsa.pub ]; then
-            nef_log "copy ~/.ssh/id_dsa.pub to ${current_target}:/root/.ssh/authorized_keys"
-            cat ~/.ssh/id_dsa.pub | driver_${current_driver}_exec --hybrid \
-                -c "mkdir -p ${current_prefix}/root/.ssh && cat >>${current_prefix}/root/.ssh/authorized_keys"
-        fi
+        for key in id_rsa id_dsa id_ecdsa id_ed25519; do
+            if [ -f ~/.ssh/$key.pub ]; then
+                nef_log "copy ~/.ssh/$key.pub to ${current_target}:/root/.ssh/authorized_keys"
+                cat ~/.ssh/$key.pub | driver_${current_driver}_exec --hybrid \
+                                               -c "mkdir -p ${current_prefix}/root/.ssh && cat >>${current_prefix}/root/.ssh/authorized_keys"
+            fi
+        done
     fi
 
     # Set GIT config for user.name and user.email (--custom git-user)
