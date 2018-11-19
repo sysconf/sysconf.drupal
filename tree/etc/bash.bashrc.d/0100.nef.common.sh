@@ -44,7 +44,7 @@ fi
 
 # set a fancy prompt (non-color, unless we know we "want" color)
 case "$TERM" in
-    xterm-color) color_prompt=yes;;
+    xterm*color*) color_prompt=yes;;
 esac
 
 # uncomment for a colored prompt, if the terminal has the capability; turned
@@ -73,7 +73,9 @@ unset color_prompt force_color_prompt
 # If this is an xterm set the title to user@host:dir
 case "$TERM" in
 xterm*|rxvt*)
-    PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
+    # OKA: seul SSH affiche le host, en local (non root) c'est dernier rep
+    # PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
+    PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\W\a\]$PS1"
     ;;
 *)
     ;;
@@ -108,16 +110,17 @@ fi
 export HISTTIMEFORMAT='%F %T '
 export MC_SKIN=dark
 
+
 # set a fancy prompt
-case "$TERM" in
-        # xterm-color)
-xterm*)
-    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\H\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
-    ;;
-*)
-    PS1='${debian_chroot:+($debian_chroot)}\u@\H:\w\$ '
-    ;;
-esac
+#case "$TERM" in
+#        # xterm-color)
+#xterm*)
+#    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\H\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+#    ;;
+#*)
+#    PS1='${debian_chroot:+($debian_chroot)}\u@\H:\w\$ '
+#    ;;
+#esac
 
 shopt -s dirspell  # corrections mineures auto pour autocompl des rep.
 #shopt -s failglob  # erreur si glob ne trouve pas de fichier

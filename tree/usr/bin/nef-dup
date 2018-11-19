@@ -161,7 +161,13 @@ script_command_backup() {
     done
 }
 
-# command: restore <unique-profile-name> <local-directory>
+# command: restore <unique-profile-name> [<path-to-restore> [<local-directory>]]
+#
+# If <path-to-restore> is provided, only this path will be restored from the
+# archive.
+#
+# If <local-directory> is not provided, profile-defined NEFDUP_LOCAL_PATH is
+# used, concatenated with <path-to-restore>.
 #
 # Options can be given at any position:
 #
@@ -182,10 +188,11 @@ script_command_restore() {
         esac
     done
 
-    [ "${#_argv[@]}" -lt 2 ] && nef_fatal_usage_command restore "too few arguments"
-    [ "${#_argv[@]}" -gt 2 ] && nef_fatal_usage_command restore "too many arguments"
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command restore "too few arguments"
+    [ "${#_argv[@]}" -gt 3 ] && nef_fatal_usage_command restore "too many arguments"
+    local _rel_path="${_argv[1]}"
+    local _local_dir="${_argv[2]}"
 
-    local _local_dir="${_argv[1]}"
     local _profiles=( $(script_expand_profiles "${_argv[0]}") )
     [ "${#_profiles[@]}" -gt 1 ] \
         && nef_fatal_usage_command restore "profile pattern must expand to a single profile (try with 'list'): ${_argv[0]}"
@@ -193,13 +200,24 @@ script_command_restore() {
     local _profile="${_profiles[0]}"
 
     script_load_profile "$_profile"
-    nef_log "Restoring backup from URL: $NEFDUP_TARGET_URL"
-    nef_log "   ... to local directory: $_local_dir"
+    local _target_url="$NEFDUP_TARGET_URL"
+    local _dest_dir="$NEFDUP_LOCAL_PATH"
+    if [ -n "$_rel_path" ]; then
+        _dup_options=("${_dup_options[@]}" --file-to-restore "$_rel_path")
+        _dest_dir="${_dest_dir}/${_rel_path}"
+    fi
+    if [ -n "$_local_dir" ]; then
+        _dest_dir="$_local_dir"
+    fi
+
+
+    nef_log "Restoring backup from URL: $_target_url"
+    nef_log "   ... to local directory: $_dest_dir"
 
     [ $NEFDUP_SHOW_PROGRESS = yes ] && _dup_options=("${_dup_options[@]}" --progress)
     [ $NEFDUP_ENABLE_ENCRYPTION = yes ] || _dup_options=("${_dup_options[@]}" --no-encryption)
 
-    _dup_args=("${_dup_options[@]}" --verbosity "$NEFDUP_DUPLICITY_VERBOSITY" "$NEFDUP_TARGET_URL" "$_local_dir")
+    _dup_args=("${_dup_options[@]}" --verbosity "$NEFDUP_DUPLICITY_VERBOSITY" "$NEFDUP_TARGET_URL" "$_dest_dir")
 
     script_before_operation
 
