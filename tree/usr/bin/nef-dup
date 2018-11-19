@@ -34,6 +34,12 @@
 #       If not mounted, it is mounted automatically before and unmounted after
 #       operations happen (will fait if not in /etc/fstab).
 #
+#   NEFDUP_ENABLE_ENCRYPTION
+#       "yes" or "no" on whether GPG encyption must be used for this backup
+#
+#   NEFDUP_ENCRYPT_KEY
+#       GPG key ID to use for encryption (option to duplicity --encrypt-key)
+#
 # Options configurables in /etc/default/nef-dup:
 #
 #   NEFDUP_PROFILE_DIR [/etc/nef-dup]
@@ -74,6 +80,7 @@ NEFDUP_PROFILE_DESCR="(no description)"
 NEFDUP_IS_INCREMENTAL=no
 NEFDUP_DEST_LOG=yes
 NEFDUP_ENABLE_ENCRYPTION=no
+NEFDUP_ENCRYPT_KEY=
 NEFDUP_SHOW_PROGRESS=yes
 NEFDUP_EXCLUDE_OTHER_FILESYSTEMS=yes
 NEFDUP_DUPLICITY_VERBOSITY=notice
@@ -121,7 +128,7 @@ script_command_list() {
 ##
 script_command_backup() {
     local _dry=no
-    local _dup_options=()
+    local _dup_options=("${NEFDUP_OPTIONS_ARRAY[@]}")
     local _argv=()
 
     while [ -n "$1" ]; do
@@ -142,7 +149,13 @@ script_command_backup() {
         nef_log "   ... to target URL: $NEFDUP_TARGET_URL"
 
         [ $NEFDUP_SHOW_PROGRESS = yes ] && _dup_options=("${_dup_options[@]}" --progress)
-        [ $NEFDUP_ENABLE_ENCRYPTION = yes ] || _dup_options=("${_dup_options[@]}" --no-encryption)
+        if [ $NEFDUP_ENABLE_ENCRYPTION = yes ]; then
+            if [ -n "$NEFDUP_ENCRYPT_KEY" ]; then
+                _dup_options=("${_dup_options[@]}" --encrypt-key "$NEFDUP_ENCRYPT_KEY")
+            fi
+        else
+            _dup_options=("${_dup_options[@]}" --no-encryption)
+        fi
         [ $NEFDUP_EXCLUDE_OTHER_FILESYSTEMS = yes ] && _dup_options=("${_dup_options[@]}" --exclude-other-filesystems)
 
         _dup_args=("${_dup_options[@]}" --verbosity "$NEFDUP_DUPLICITY_VERBOSITY" "$NEFDUP_LOCAL_PATH" "$NEFDUP_TARGET_URL")
