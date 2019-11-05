@@ -3,7 +3,7 @@
 # nef-dup - wrapper around the 'duplicity' backup tool, for profile-based management
 #
 # It provides easy use of 'duplicity' by using static configuration files in /etc/nef-dup.
-#
+##
 # A profile named "toto" is configured through file: /etc/nef-dup/toto.conf
 #
 # Profile options:
@@ -29,6 +29,16 @@
 #   NEFDUP_OPTIONS_ARRAY
 #       Array of options to pass to duplicity(1)
 #
+#   NEFDUP_AUTO_MOUNT_POINT
+#       Define a local absolute directory to be mounted.
+#       If not mounted, it is mounted automatically before and unmounted after
+#       operations happen (will fait if not in /etc/fstab).
+#
+#   NEFDUP_ENABLE_ENCRYPTION
+#       "yes" or "no" on whether GPG encyption must be used for this backup
+#
+#   NEFDUP_ENCRYPT_KEY
+#       GPG key ID to use for encryption (option to duplicity --encrypt-key)
 #
 # Options configurables in /etc/default/nef-dup:
 #
@@ -70,11 +80,14 @@ NEFDUP_PROFILE_DESCR="(no description)"
 NEFDUP_IS_INCREMENTAL=no
 NEFDUP_DEST_LOG=yes
 NEFDUP_ENABLE_ENCRYPTION=no
+NEFDUP_ENCRYPT_KEY=
 NEFDUP_SHOW_PROGRESS=yes
 NEFDUP_EXCLUDE_OTHER_FILESYSTEMS=yes
 NEFDUP_DUPLICITY_VERBOSITY=notice
 NEFDUP_LOG_FILE=
+NEFDUP_AUTO_MOUNT_POINT=
 
+NEFDUP_PROFILE_FILE_SUFFIX=.rc
 NEFDUP_LOG_DIR=/var/log/nef-dup
 NEFDUP_PROFILE_DIR=/etc/nef-dup
 
@@ -106,9 +119,7 @@ script_command_list() {
     script_list_profiles "${_argv[@]}"
 }
 
-# command: backup <name>
-#
-#
+# command: backup <profile-name-pattern1>  ...
 #
 # Options can be given at any position:
 #
@@ -138,10 +149,18 @@ script_command_backup() {
         nef_log "   ... to target URL: $NEFDUP_TARGET_URL"
 
         [ $NEFDUP_SHOW_PROGRESS = yes ] && _dup_options=("${_dup_options[@]}" --progress)
-        [ $NEFDUP_ENABLE_ENCRYPTION = yes ] || _dup_options=("${_dup_options[@]}" --no-encryption)
+        if [ $NEFDUP_ENABLE_ENCRYPTION = yes ]; then
+            if [ -n "$NEFDUP_ENCRYPT_KEY" ]; then
+                _dup_options=("${_dup_options[@]}" --encrypt-key "$NEFDUP_ENCRYPT_KEY")
+            fi
+        else
+            _dup_options=("${_dup_options[@]}" --no-encryption)
+        fi
         [ $NEFDUP_EXCLUDE_OTHER_FILESYSTEMS = yes ] && _dup_options=("${_dup_options[@]}" --exclude-other-filesystems)
 
         _dup_args=("${_dup_options[@]}" --verbosity "$NEFDUP_DUPLICITY_VERBOSITY" "$NEFDUP_LOCAL_PATH" "$NEFDUP_TARGET_URL")
+
+        script_before_operation
 
         if [ $_dry = no ]; then
             nef_log -v "Running: duplicity ${_dup_args[@]}"
@@ -149,7 +168,80 @@ script_command_backup() {
         else
             nef_log -v "Dry-running: duplicity ${_dup_args[@]}"
         fi
+
+        script_after_operation
+
     done
+}
+
+# command: restore <unique-profile-name> [<path-to-restore> [<local-directory>]]
+#
+# If <path-to-restore> is provided, only this path will be restored from the
+# archive.
+#
+# If <local-directory> is not provided, profile-defined NEFDUP_LOCAL_PATH is
+# used, concatenated with <path-to-restore>.
+#
+# Options can be given at any position:
+#
+#   -d, --dry
+#               Do a dry-run. Useful with -v to dump the duplicity command line
+##
+script_command_restore() {
+    local _dry=no
+    local _dup_options=()
+    local _argv=()
+
+    while [ -n "$1" ]; do
+        case "$1" in
+            -d|--dry) _dry=yes; shift ;;
+            -h|--help) script_command_help restore; return ;;
+            -*) script_eval_common_option "$1"; shift ;;
+            *) _argv=("${_argv[@]}" "$1"); shift ;;
+        esac
+    done
+
+    [ "${#_argv[@]}" -lt 1 ] && nef_fatal_usage_command restore "too few arguments"
+    [ "${#_argv[@]}" -gt 3 ] && nef_fatal_usage_command restore "too many arguments"
+    local _rel_path="${_argv[1]}"
+    local _local_dir="${_argv[2]}"
+
+    local _profiles=( $(script_expand_profiles "${_argv[0]}") )
+    [ "${#_profiles[@]}" -gt 1 ] \
+        && nef_fatal_usage_command restore "profile pattern must expand to a single profile (try with 'list'): ${_argv[0]}"
+
+    local _profile="${_profiles[0]}"
+
+    script_load_profile "$_profile"
+    local _target_url="$NEFDUP_TARGET_URL"
+    local _dest_dir="$NEFDUP_LOCAL_PATH"
+    if [ -n "$_rel_path" ]; then
+        _dup_options=("${_dup_options[@]}" --file-to-restore "$_rel_path")
+        _dest_dir="${_dest_dir}/${_rel_path}"
+    fi
+    if [ -n "$_local_dir" ]; then
+        _dest_dir="$_local_dir"
+    fi
+
+
+    nef_log "Restoring backup from URL: $_target_url"
+    nef_log "   ... to local directory: $_dest_dir"
+
+    [ $NEFDUP_SHOW_PROGRESS = yes ] && _dup_options=("${_dup_options[@]}" --progress)
+    [ $NEFDUP_ENABLE_ENCRYPTION = yes ] || _dup_options=("${_dup_options[@]}" --no-encryption)
+
+    _dup_args=("${_dup_options[@]}" --verbosity "$NEFDUP_DUPLICITY_VERBOSITY" "$NEFDUP_TARGET_URL" "$_dest_dir")
+
+    script_before_operation
+
+    if [ $_dry = no ]; then
+        nef_log -v "Running: duplicity ${_dup_args[@]}"
+        duplicity "${_dup_args[@]}" | sed -u 's/^/duplicity: /' | tee -a $NEFDUP_LOG_FILE
+    else
+        nef_log -v "Dry-running: duplicity ${_dup_args[@]}"
+    fi
+
+    script_after_operation
 }
 
 # command: help [command]
@@ -185,12 +277,8 @@ script_list_profiles() {
     # nef_log -v "Expanded profiles: ${_profiles}:"
     nef_log "Matching profiles from ${NEFDUP_PROFILE_DIR}:"
     for _profile in $_profiles; do
-        # local file=${NEFDUP_PROFILE_DIR}/$_profile.conf
-        # for file in ${NEFDUP_PROFILE_DIR}/*.conf; do
         (
             script_load_profile "$_profile"
-            # name=$(basename "$file" .conf)
-            # descr=$( . $file && echo "${NEFDUP_PROFILE_DESCR}")
             nef_log "  $_profile - ${NEFDUP_PROFILE_DESCR}"
         )
     done
@@ -204,8 +292,12 @@ script_load_profile() {
         exit 0
     fi
 
-    _profile_file="${NEFDUP_PROFILE_DIR}/${_profile_name}.conf"
+    _profile_file="${NEFDUP_PROFILE_DIR}/${_profile_name}${NEFDUP_PROFILE_FILE_SUFFIX}"
+
+    local _dir="$PWD"
+    cd "$(dirname $_profile_file)"
     . $_profile_file || nef_fatal "could not load profile file: $_profile_file"
+    cd "$_dir"
 
     [ -n "$NEFDUP_LOCAL_PATH" ] \
         || nef_fatal "NEFDUP_LOCAL_PATH is not defined in profile file: $_profile_file"
@@ -238,15 +330,15 @@ script_expand_profiles() {
 
         if [[ "$_pattern" =~ ^/ ]]; then
             # Absolute path: do not perform star expansion.
-            # Just find .conf files if it matches a directory
-            if [[ "$_pattern" =~ .conf$ ]]; then
+            # Just find .rc (or $NEFDUP_PROFILE_FILE_SUFFIX) files if it matches a directory
+            if [[ "$_pattern" =~ $NEFDUP_PROFILE_FILE_SUFFIX$ ]]; then
                 local _files="$_pattern"
             else
-                nef_log -d "Pattern is a directory, we must find *.conf files in it: $_pattern"
+                nef_log -d "Pattern is a directory, we must find *$NEFDUP_PROFILE_FILE_SUFFIX files in it: $_pattern"
                 if [ -d "$_pattern" ]; then
-                    local _files=$(find -L "$_pattern" -name '*.conf')
+                    local _files=$(find -L "$_pattern" -name '*'"$NEFDUP_PROFILE_FILE_SUFFIX")
                 else
-                    nef_log "Warning: no such *.conf file or directory: $_pattern"
+                    nef_log "Warning: no such *$NEFDUP_PROFILE_FILE_SUFFIX file or directory: $_pattern"
                     continue
                 fi
             fi
@@ -257,9 +349,9 @@ script_expand_profiles() {
             if [[ "$_pattern" =~ /$ ]]; then
                 _find_args=( -path "$NEFDUP_PROFILE_DIR/${_pattern}*" )
             else
-                _find_args=( -path "$NEFDUP_PROFILE_DIR/$_pattern" -or -path "$NEFDUP_PROFILE_DIR/$_pattern.conf" )
+                _find_args=( -path "$NEFDUP_PROFILE_DIR/$_pattern" -or -path "$NEFDUP_PROFILE_DIR/$_pattern$NEFDUP_PROFILE_FILE_SUFFIX" )
             fi
-            _find_args=( -L $NEFDUP_PROFILE_DIR -name '*.conf' "${_find_args[@]}" )
+            _find_args=( -L $NEFDUP_PROFILE_DIR -name '*'"$NEFDUP_PROFILE_FILE_SUFFIX" "${_find_args[@]}" )
 
             # echo "find ${_find_args[@]}"  >&2
             nef_log -d "Running: find ${_find_args[@]}"
@@ -273,16 +365,39 @@ script_expand_profiles() {
             continue
         fi
         for _file in $_files; do
-            # convert _file to end with either '.conf' or '/'
+            # convert _file to end with either $NEFDUP_PROFILE_FILE_SUFFIX or '/'
             if [ -r "$_file" ]; then
                 nef_log -v "Found matching profile at: $_file"
                 _file="${_file#${NEFDUP_PROFILE_DIR}/}"
-                echo "${_file%.conf}"
+                echo "${_file%$NEFDUP_PROFILE_FILE_SUFFIX}"
             else
                 nef_log "Warning: could not read profile file: $_file"
             fi
         done
     done
+}
+
+script_before_operation() {
+    if [ -n "$NEFDUP_AUTO_MOUNT_POINT" ]; then
+        if ! mount | grep -q " on $NEFDUP_AUTO_MOUNT_POINT"; then
+
+            nef_log -v "Directory not mounted, so mounting it: $NEFDUP_AUTO_MOUNT_POINT"
+            script_auto_mounted=yes
+            mount "$NEFDUP_AUTO_MOUNT_POINT" \
+                || nef_fatal "Could not mount directory: $NEFDUP_AUTO_MOUNT_POINT"
+            nef_log "Successfully mounted directory: $NEFDUP_AUTO_MOUNT_POINT"
+        fi
+    fi
+}
+
+script_after_operation() {
+    if [ "$script_auto_mounted" = yes ]; then
+        if umount "$NEFDUP_AUTO_MOUNT_POINT"; then
+            nef_log "Successfully unmounted directory: $NEFDUP_AUTO_MOUNT_POINT"
+        else
+            nef_fatal "WARNING: Could not unmount directory: $NEFDUP_AUTO_MOUNT_POINT"
+        fi
+    fi
 }
 
 ######################################################################
