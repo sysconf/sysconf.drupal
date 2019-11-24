@@ -1,0 +1,7 @@
+# Setup script for sysconf layer "sysconf.owncloud"  -*- shell-script -*-
+
+_packages=""
+_packages="$_packages mariadb-server"
+_packages="$_packages php php-mbstring php-gd php-xml php-mysql php-mysql composer"
+
+sysconf_require_packages "$_packages"
